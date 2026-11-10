@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { ChevronRight, Headphones, ShieldAlert, Volume2 } from 'lucide-react'
+import { ChevronRight, Headphones, Phone, ShieldAlert, Volume2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
@@ -58,9 +58,14 @@ export function HomeTab() {
             {p.local_language ? <>Ready for callers in {langNative(p.local_language)}</> : <>Ready when you can’t pick up</>}
           </p>
           <p className="mt-2 text-[14px] text-white/60">
-            {haanjiNumber ? 'Reject a call and Haanji picks up.' : 'Your setup is saved. Try a practice call meanwhile.'}
+            {haanjiNumber ? `Call from +91 ${me.phone.slice(0, 5)} ${me.phone.slice(5)} and you reach your own Haanji.` : 'Your setup is saved. Try a call in the browser meanwhile.'}
           </p>
         </div>
+        {haanjiNumber && (
+          <a href={`tel:${haanjiNumber}`} className="relative mt-5 flex h-12 items-center justify-center gap-2 rounded-2xl bg-accent text-[15px] font-semibold text-ink active:scale-[0.98] transition">
+            <Phone className="h-[18px] w-[18px]" fill="currentColor" /> Call your Haanji · {haanjiNumber.length === 11 ? `${haanjiNumber.slice(0, 3)} ${haanjiNumber.slice(3, 7)} ${haanjiNumber.slice(7)}` : haanjiNumber}
+          </a>
+        )}
       </motion.section>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
