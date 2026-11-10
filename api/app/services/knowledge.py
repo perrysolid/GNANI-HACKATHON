@@ -8,7 +8,32 @@ Shape (every leaf is a short string or bool; unknown keys are dropped):
   notes:    {say, never}
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
+
+# Receptionist questions per line of work. The app renders these; calls answer from them.
+PROFESSIONS: dict[str, dict] = {
+    "clinic": {"label": "Doctor or clinic", "questions": [
+        ("doctor", "Doctor’s name and speciality"), ("timings", "Days and timings"),
+        ("fee", "Consultation fee"), ("booking", "How do patients get an appointment?"),
+        ("emergency", "What should someone do in an emergency?"), ("other", "Anything patients often ask")]},
+    "shop": {"label": "Shop or kirana", "questions": [
+        ("sells", "What do you sell?"), ("hours", "Opening hours"), ("delivery", "Home delivery? Which areas?"),
+        ("payment", "Payment options"), ("other", "Anything customers often ask")]},
+    "tutor": {"label": "Tutor or classes", "questions": [
+        ("subjects", "Subjects and classes"), ("batches", "Batch timings"), ("fees", "Fees"),
+        ("mode", "At home, at a centre or online?"), ("demo", "Demo class or admission process")]},
+    "services": {"label": "Repairs and home services", "questions": [
+        ("jobs", "Which jobs do you take?"), ("areas", "Areas you cover"), ("charges", "Visit charge and rates"),
+        ("when", "When are you available?"), ("urgent", "Same-day or emergency work?")]},
+    "salon": {"label": "Salon or parlour", "questions": [
+        ("services", "Services and prices"), ("hours", "Timings"), ("booking", "Appointments or walk-in?")]},
+    "food": {"label": "Food, tiffin or restaurant", "questions": [
+        ("menu", "What’s on the menu?"), ("hours", "Timings"), ("delivery", "Delivery area and charges"),
+        ("order", "How do people order?"), ("payment", "Payment options")]},
+    "other": {"label": "Something else", "questions": [
+        ("what", "What do you do?"), ("hours", "When are you available?"),
+        ("booking", "How should people book or reach you?")]},
+}
 
 PLACE = ("name", "address", "landmark", "note")
 SCHEMA: dict[str, dict[str, tuple[str, ...]]] = {
@@ -30,6 +55,12 @@ def _leaf(v):
 def clean(raw: dict) -> dict:
     """Keep only known keys, trim strings. Flat groups (rides/status/notes) live at the top level."""
     out: dict = {}
+    b = raw.get("business")
+    if isinstance(b, dict) and b.get("kind") in PROFESSIONS:
+        qids = {q for q, _ in PROFESSIONS[b["kind"]]["questions"]}
+        answers = b.get("answers") if isinstance(b.get("answers"), dict) else {}
+        out["business"] = {"kind": b["kind"], "name": _leaf(b.get("name")),
+                           "answers": {q: _leaf(v) for q, v in answers.items() if q in qids}}
     for group, subs in SCHEMA.items():
         src = raw.get(group) or {}
         if not isinstance(src, dict):
@@ -84,6 +115,16 @@ def facts(profile: dict, now: datetime | None = None) -> str:
             name = f" ({p['name']})" if p.get("name") else ""
             extra = "".join(f"; {p[f]}" for f in ("landmark", "note") if p.get(f))
             lines.append(f"{label}{name}: {p['address']}{extra}.")
+    live = profile.get("live") or {}
+    if live.get("at"):
+        age = ((now or datetime.now(timezone.utc)) - datetime.fromisoformat(live["at"])).total_seconds() / 60
+        if age <= 30:
+            when = "just now" if age < 2 else f"{round(age)} minutes ago"
+            line = f"LIVE LOCATION (from their phone, updated {when}): {live.get('place') or 'unknown street'}."
+            if live.get("near"):
+                line += " Landmarks around them: " + "; ".join(
+                    f"{p['name']} ({p['kind']}) {p['m']} m {p['dir']}" for p in live["near"]) + "."
+            lines.append(line)
     n = places.get("now") or {}
     if n.get("address") or n.get("label"):
         when = f" (shared at {n['at']})" if n.get("at") else ""
@@ -116,6 +157,13 @@ def facts(profile: dict, now: datetime | None = None) -> str:
         if st.get("back_at"):
             line += f", free after {st['back_at']}"
         lines.append(line + "." + (f" Message for callers: {st['message']}" if st.get("message") else ""))
+
+    b = k.get("business") or {}
+    if b.get("kind") in PROFESSIONS:
+        prof = PROFESSIONS[b["kind"]]
+        head = f"THEIR WORK: {prof['label']}" + (f", called {b['name']}" if b.get("name") else "") + "."
+        qa = [f"{q} {b['answers'][qid]}" for qid, q in prof["questions"] if (b.get("answers") or {}).get(qid)]
+        lines.append(head + (" Answers for callers: " + " | ".join(qa) if qa else ""))
 
     notes = k.get("notes") or {}
     if notes.get("say"):

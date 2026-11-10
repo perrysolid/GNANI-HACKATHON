@@ -68,3 +68,33 @@ def test_knowledge_is_cleaned_and_used_in_facts():
         h = {"Authorization": f"Bearer {_login(c, phone='9876500001')}"}
         r = c.patch("/api/me", headers=h, json={"knowledge": {"notes": {"say": "Parcel can wait"}}})
         assert r.status_code == 200 and r.json()["profile"]["knowledge"]["notes"]["say"] == "Parcel can wait"
+
+
+def test_live_location_feeds_call_facts(monkeypatch):
+    import app.services.places as places
+    from app.services.knowledge import facts
+
+    async def fake(lat, lng):
+        return {"place": "24th Main Road, HSR Layout", "near": [{"name": "Gayatri Temple", "kind": "place of worship", "m": 30, "dir": "east"}]}
+    monkeypatch.setattr(places, "describe", fake)
+    with TestClient(app) as c:
+        h = {"Authorization": f"Bearer {_login(c, phone='9876500003')}"}
+        r = c.post("/api/me/location", headers=h, json={"lat": 12.9116, "lng": 77.6474, "accuracy": 12})
+        assert r.status_code == 200 and r.json()["near"][0]["name"] == "Gayatri Temple"
+        profile = c.get("/api/me", headers=h).json()["profile"]
+        text = facts(profile)
+        assert "LIVE LOCATION" in text and "Gayatri Temple" in text and "30 m east" in text
+        assert c.delete("/api/me/location", headers=h).status_code == 200
+        assert "LIVE LOCATION" not in facts(c.get("/api/me", headers=h).json()["profile"])
+
+
+def test_profession_answers_reach_the_call():
+    from app.services.knowledge import clean, facts
+    k = clean({"business": {"kind": "clinic", "name": "Sharma Clinic",
+                            "answers": {"timings": "Mon to Sat, 10 to 1 and 5 to 8", "fee": "500 rupees", "hack": "x"}}})
+    assert "hack" not in k["business"]["answers"]
+    text = facts({"knowledge": k})
+    assert "Sharma Clinic" in text and "Days and timings Mon to Sat" in text and "500 rupees" in text
+    with TestClient(app) as c:
+        profs = c.get("/api/catalog").json()["professions"]
+        assert any(p["id"] == "clinic" and p["questions"] for p in profs)

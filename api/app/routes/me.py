@@ -98,7 +98,10 @@ def _me(user: User, db: Session) -> dict:
 
 @router.get("/catalog")
 def catalog():
-    return {"languages": LANGUAGES, "cities": CITIES, "voices": VOICES}
+    from ..services.knowledge import PROFESSIONS
+    return {"languages": LANGUAGES, "cities": CITIES, "voices": VOICES,
+            "professions": [{"id": k, "label": v["label"], "questions": [{"id": q, "text": t} for q, t in v["questions"]]}
+                            for k, v in PROFESSIONS.items()]}
 
 
 @router.get("/me")
@@ -119,6 +122,34 @@ def update_me(body: ProfileIn, user: User = Depends(current_user), db: Session =
     user.profile = {**(user.profile or {}), **data}  # new dict so SQLAlchemy sees the change
     db.commit()
     return _me(user, db)
+
+
+class LocationIn(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    accuracy: float = Field(default=0, ge=0, le=100_000)
+
+
+@router.post("/me/location")
+async def share_location(body: LocationIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Live location from the phone. Landmarks are looked up again only after moving ~40 m."""
+    from datetime import datetime, timezone
+    from ..services.places import describe, distance_m
+    live = dict((user.profile or {}).get("live") or {})
+    moved = "lat" not in live or distance_m(live["lat"], live["lng"], body.lat, body.lng) > 40
+    if moved or not live.get("place"):
+        live.update(await describe(body.lat, body.lng))
+    live.update(lat=body.lat, lng=body.lng, acc=round(body.accuracy), at=datetime.now(timezone.utc).isoformat())
+    user.profile = {**(user.profile or {}), "live": live}
+    db.commit()
+    return {"place": live.get("place", ""), "near": live.get("near", []), "at": live["at"]}
+
+
+@router.delete("/me/location")
+def stop_location(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    user.profile = {k: v for k, v in (user.profile or {}).items() if k != "live"}
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/me/number")

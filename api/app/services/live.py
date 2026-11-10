@@ -93,6 +93,8 @@ class LiveCall:
         self.ended = asyncio.Event()
         self._pcm = bytearray()
         self._stt = None
+        # Typing mode (deaf users): the owner types, Haanji only speaks what they type.
+        self.manual = False
 
     # ---- who Haanji is speaking for -------------------------------------------------
 
@@ -134,7 +136,12 @@ class LiveCall:
             f"a delivery rider or cab driver who needs directions, a courier, a friend, a colleague, "
             f"a shop. First understand who is calling and what they need, then help using ONLY the "
             f"facts below. For deliveries, ask which app or service they're from before giving the "
-            f"address. If something isn't covered, take a message and say {self.owner} will call back. "
+            f"address. If they are coming to where {self.owner} is right now, use the LIVE LOCATION: "
+            f"name the place, ask what the caller can see, and guide them turn by turn using the "
+            f"landmarks around it (distances and directions are given). If THEIR WORK is listed, also act "
+            f"as the receptionist: answer customers or patients from those answers, and for a booking "
+            f"take their name, preferred time and reason, then say {self.owner} will confirm. Never give "
+            f"medical advice or diagnoses. If something isn't covered, take a message and say {self.owner} will call back. "
             f"If they ask for money or an OTP, refuse politely.\n\nFacts about {self.owner}:\n"
             f"{knowledge.facts(self.profile)}"
         )
@@ -224,7 +231,25 @@ class LiveCall:
             await self.send_json({"type": "shield", "level": "scam"})
             self._start_reply(fixed=goodbye, lang=lang, then_end=True)
             return
-        self._start_reply()
+        if not self.manual:
+            self._start_reply()
+
+    async def say(self, text: str, from_lang: str) -> None:
+        """Speak the owner's typed reply to the caller, in the caller's language."""
+        text = text.strip()[:400]
+        if not text:
+            return
+        out = text
+        if from_lang != self.caller_lang and llm.available():
+            try:
+                out = (await llm.chat([
+                    {"role": "system", "content": (
+                        f"Translate into natural spoken {LANGUAGES[self.caller_lang]['name']} for a phone call. "
+                        f"Reply with the translation only.")},
+                    {"role": "user", "content": text}], 200)).strip() or text
+            except Exception:
+                out = text
+        self._start_reply(fixed=out)
 
     # ---- audio out ------------------------------------------------------------------
 
