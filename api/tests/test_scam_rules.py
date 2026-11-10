@@ -30,3 +30,22 @@ def test_family_call_has_no_signs():
 def test_rider_call_has_no_signs():
     v = analyse("Madam main Swiggy se, aapka order leke gate pe khada hoon")
     assert v.level == "no_signs"
+
+
+def test_trending_scams_are_caught():
+    cases = [
+        "Main TRAI se bol raha hoon, aapka number do ghante mein disconnect ho jayega, 9 dabaiye",
+        "Aapka beta police ne pakda hai, abhi bail ke paise UPI karo, kisi ko mat batana",
+        "Sir aapke credit card ke reward points expire ho rahe hain, OTP bata dijiye",
+        "Mumbai crime branch se, aapke Aadhaar ka misuse hua hai, money laundering case hai",
+        "मैडम आपको पैसे भेजने हैं, बस क्यूआर स्कैन करके पिन डालिए",
+        "Part time job hai, YouTube like karo aur roz 3000 kamao, pehle 500 deposit",
+    ]
+    for text in cases:
+        assert analyse(text).level == "scam", text
+
+
+def test_everyday_calls_stay_clean():
+    for text in ["Beta kal hospital jaana hai, gaadi le aana", "Bhaiya aapka parcel Amazon se hai, gate pe aa jaiye",
+                 "Doctor sahab ki timing kya hai, appointment chahiye"]:
+        assert analyse(text).level == "no_signs", text
