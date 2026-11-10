@@ -75,6 +75,12 @@ def _authorised(ws: WebSocket, secret_param: str) -> bool:
     return bool(secret_param) and secrets.compare_digest(secret_param, want)
 
 
+def _resolve_owner(caller: str, owner_param: str) -> int | None:
+    """Whose agent answers: the caller's own account if they call from their registered number
+    (so every user, judges included, reaches their own Haanji), else the configured owner."""
+    return _owner_id(caller) or _owner_id(owner_param or get_settings().phone_owner)
+
+
 def _owner_id(phone: str) -> int | None:
     digits = "".join(c for c in phone if c.isdigit())[-10:]
     if len(digits) != 10:
@@ -111,7 +117,7 @@ async def exotel(ws: WebSocket):
     caller = str(start.get("from", ""))
     rate = int((start.get("media_format") or {}).get("sample_rate") or 8000)
     persona = "screen" if params.get("persona") == "screen" else "rider"
-    uid = _owner_id(str(params.get("owner") or get_settings().phone_owner))
+    uid = _resolve_owner(caller, str(params.get("owner") or ""))
     ctx = call_context(uid, persona) if uid else None
     if not ctx or not get_settings().gnani_api_key:
         log.warning("exotel stream: no signed-up user for owner=%r (PHONE_OWNER=%r)",
@@ -276,7 +282,7 @@ async def twilio_stream(ws: WebSocket):
     want = get_settings().phone_stream_secret
     ok = secrets.compare_digest(str(params.get("secret", "")), want) if want else not get_settings().is_prod
     persona = "screen" if params.get("persona") == "screen" else "rider"
-    uid = _owner_id(str(params.get("owner") or get_settings().phone_owner)) if ok else None
+    uid = _resolve_owner(caller, str(params.get("owner") or "")) if ok else None
     ctx = call_context(uid, persona) if uid else None
     if not ctx or not get_settings().gnani_api_key:
         log.warning("twilio stream rejected (auth=%s, owner=%r)", ok, params.get("owner"))
