@@ -1,16 +1,18 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Car, Check, Clock, LocateFixed, MapPin, NotebookPen, Package, X } from 'lucide-react'
+import { Briefcase, Car, Check, Clock, LocateFixed, MapPin, NotebookPen, Package } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { api, type Address, type Knowledge, type Profile } from '../lib/api'
+import { api, type Address, type Knowledge, type Profession, type Profile } from '../lib/api'
 import { useApp } from '../lib/store'
+import { useLive } from '../lib/location'
 import { Backdrop, BackButton, ErrorText, Spinner, Toggle } from '../components/ui'
 
 /* ---------- what can be taught ------------------------------------------------ */
 
 export const TYPES = [
-  { id: 'places', label: 'Places', icon: MapPin, subs: [['home', 'Home'], ['work', 'Work'], ['now', 'Right now'], ['other', 'Other']] },
+  { id: 'places', label: 'Places', icon: MapPin, subs: [['home', 'Home'], ['work', 'Work'], ['now', 'Live'], ['other', 'Other']] },
+  { id: 'business', label: 'Business', icon: Briefcase, subs: [] },
   { id: 'delivery', label: 'Deliveries', icon: Package, subs: [['food', 'Food'], ['grocery', 'Groceries'], ['parcel', 'Parcels']] },
   { id: 'rides', label: 'Rides', icon: Car, subs: [] },
   { id: 'status', label: 'Status', icon: Clock, subs: [] },
@@ -22,13 +24,18 @@ const LEAVE = [['door', 'At the door'], ['guard', 'With security'], ['reception'
 const PICKUP = [['home', 'Home'], ['work', 'Work'], ['now', 'Where I am'], ['custom', 'Somewhere else']]
 const STATES = [['available', 'Free soon'], ['meeting', 'In a meeting'], ['driving', 'Driving'], ['travelling', 'Travelling'], ['sleeping', 'Sleeping'], ['busy', 'Busy']]
 
+const PROF_LABEL: Record<string, string> = { clinic: 'Clinic', shop: 'Shop', tutor: 'Classes', services: 'Home services', salon: 'Salon', food: 'Food', other: 'Work' }
+
+let professions: Promise<Profession[]> | null = null
+const loadProfessions = () => (professions ??= api.catalog().then((c) => c.professions))
+
 /** One-line summary per type, for the Home card. Empty string = nothing taught yet. */
 export function summary(t: TypeId, p: Profile): string {
   const k = p.knowledge ?? {}
   const label = (list: string[][], v?: string) => list.find(([id]) => id === v)?.[1] ?? ''
   switch (t) {
     case 'places': {
-      const n = [p.address?.house && 'Home', k.places?.work?.address && 'Work', k.places?.now?.address && 'Right now', k.places?.other?.address && (k.places.other.name || 'Other')].filter(Boolean)
+      const n = [p.address?.house && 'Home', k.places?.work?.address && 'Work', (p.live?.at || k.places?.now?.address) && 'Live', k.places?.other?.address && (k.places.other.name || 'Other')].filter(Boolean)
       return n.join(' · ')
     }
     case 'delivery': {
@@ -38,6 +45,7 @@ export function summary(t: TypeId, p: Profile): string {
     case 'rides': return k.rides?.pickup ? `Pickup: ${k.rides.pickup === 'custom' ? k.rides.custom || 'custom' : label(PICKUP, k.rides.pickup)}` : ''
     case 'status': return k.status?.state ? label(STATES, k.status.state) + (k.status.back_at ? ` till ${k.status.back_at}` : '') : ''
     case 'notes': return k.notes?.say || k.notes?.never ? 'Added' : ''
+    case 'business': return k.business?.kind ? (k.business.name || PROF_LABEL[k.business.kind] || 'Added') : ''
   }
 }
 
@@ -106,12 +114,12 @@ export function Teach() {
       </div>
 
       {/* types */}
-      <nav className="mt-6 grid grid-cols-5 gap-1.5 px-4">
+      <nav className="no-scrollbar mt-6 flex gap-1.5 overflow-x-auto px-4">
         {TYPES.map(({ id, label, icon: Icon }) => {
           const on = id === type
           const has = !!summary(id, { ...me.profile, knowledge: k, address: addr })
           return (
-            <button key={id} onClick={() => setParams({ t: id }, { replace: true })} className={clsx('relative flex flex-col items-center gap-1.5 rounded-2xl py-3 transition-colors', on ? 'bg-ink text-white' : 'text-ink/60 active:bg-ink/5')}>
+            <button key={id} onClick={() => setParams({ t: id }, { replace: true })} className={clsx('relative flex w-[74px] shrink-0 flex-col items-center gap-1.5 rounded-2xl py-3 transition-colors', on ? 'bg-ink text-white' : 'text-ink/60 active:bg-ink/5')}>
               <Icon className="h-[20px] w-[20px]" strokeWidth={on ? 2.3 : 2} />
               <span className="text-[11.5px] font-semibold">{label}</span>
               {has && !on && <span className="absolute right-2.5 top-2 h-1.5 w-1.5 rounded-[2px] bg-ink" />}
@@ -179,6 +187,8 @@ export function Teach() {
             </>
           )}
 
+          {type === 'business' && <Business value={k.business} set={set} />}
+
           {type === 'notes' && (
             <>
               <Field area label="Haanji may tell callers" value={k.notes?.say} onChange={(v) => set('notes.say', v)} placeholder="My office closes at 7. The landlord can come on Sunday." />
@@ -193,6 +203,32 @@ export function Teach() {
 }
 
 /* ---------- pieces ------------------------------------------------------------- */
+
+function Business({ value, set }: { value?: Knowledge['business']; set: (path: string, v: unknown) => void }) {
+  const [list, setList] = useState<Profession[] | null>(null)
+  const [err, setErr] = useState('')
+  useEffect(() => { loadProfessions().then(setList).catch((e) => setErr(e.message)) }, [])
+  const prof = list?.find((p) => p.id === value?.kind)
+  if (err) return <ErrorText>{err}</ErrorText>
+  if (!list) return <div className="flex justify-center py-10 text-muted"><Spinner /></div>
+  return (
+    <>
+      <Chips label="What do you do" options={list.map((p) => [p.id, p.label])} value={value?.kind}
+        onChange={(v) => set('business', v ? { kind: v, name: value?.name ?? '', answers: value?.kind === v ? value.answers ?? {} : {} } : {})} />
+      {prof && (
+        <motion.div key={prof.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+          <p className="rounded-2xl bg-ink/[0.04] px-4 py-3 text-[14px] leading-relaxed text-ink/70">
+            Callers asking about your {prof.label.toLowerCase()} get these answers. Bookings come to you as call notes.
+          </p>
+          <Field label="Name" value={value?.name} onChange={(v) => set('business.name', v)} placeholder={prof.id === 'clinic' ? 'Sharma Clinic' : 'Name people know it by'} />
+          {prof.questions.map((q) => (
+            <Field key={q.id} area label={q.text} value={value?.answers?.[q.id]} onChange={(v) => set(`business.answers.${q.id}`, v)} />
+          ))}
+        </motion.div>
+      )}
+    </>
+  )
+}
 
 function SaveState({ state }: { state: 'idle' | 'saving' | 'saved' | 'error' }) {
   return (
@@ -235,49 +271,60 @@ function Chips({ label, options, value, onChange }: { label: string; options: st
   )
 }
 
-/** Current location: from GPS (reverse-geocoded) or typed. Callers hear it with the time it was shared. */
-function RightNow({ value, onChange }: { value?: { label?: string; address?: string; at?: string }; onChange: (v: { label?: string; address?: string; at?: string } | Record<string, never>) => void }) {
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const stamp = () => new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
-
-  const locate = () => {
-    if (!navigator.geolocation) { setErr('This browser can’t share location.'); return }
-    setBusy(true); setErr('')
-    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-      try {
-        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&accept-language=en&lat=${coords.latitude}&lon=${coords.longitude}`)
-        const j = await r.json()
-        const a = j.address ?? {}
-        const line = [a.amenity || a.building || a.shop, a.house_number && a.road ? `${a.house_number} ${a.road}` : a.road, a.neighbourhood || a.suburb, a.city || a.town || a.county].filter(Boolean).join(', ')
-        onChange({ ...value, address: line || j.display_name?.split(',').slice(0, 4).join(',') || '', at: stamp() })
-      } catch { setErr('Found you, but couldn’t name the place. Type it below.') }
-      setBusy(false)
-    }, () => { setErr('Location is off. Allow it in the browser, or type where you are.'); setBusy(false) }, { enableHighAccuracy: true, timeout: 12000 })
-  }
+/** Live location: on = the phone keeps Haanji updated by itself; callers are guided by nearby landmarks. */
+function RightNow({ value, onChange }: { value?: { label?: string; address?: string; at?: string }; onChange: (v: { label?: string; address?: string; at?: string }) => void }) {
+  const { on, last, error, start, stop } = useLive()
+  const me = useApp((s) => s.me)
+  const live = last ?? me?.profile.live
+  const ago = live?.at ? Math.max(0, Math.round((Date.now() - new Date(live.at).getTime()) / 60000)) : null
 
   return (
     <>
-      <button onClick={locate} disabled={busy} className="flex w-full items-center gap-4 rounded-2xl bg-ink p-4 text-left text-white active:scale-[0.99] transition">
-        <span className="grid h-11 w-11 place-items-center rounded-xl bg-accent text-ink">{busy ? <Spinner /> : <LocateFixed className="h-5 w-5" />}</span>
-        <span className="flex-1">
-          <span className="block text-[16px] font-semibold">Use my location</span>
-          <span className="block text-[13px] text-white/60">{value?.at ? `Updated ${value.at}` : 'Callers hear the place, not coordinates'}</span>
-        </span>
-      </button>
-      {err && <ErrorText>{err}</ErrorText>}
+      <div className="overflow-hidden rounded-3xl bg-ink text-white">
+        <div className="flex items-center gap-4 p-5">
+          <span className="relative grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent text-ink">
+            <LocateFixed className="h-5 w-5" />
+            {on && <motion.span className="absolute inset-0 rounded-xl border-2 border-accent" animate={{ scale: [1, 1.5], opacity: [0.8, 0] }} transition={{ duration: 1.6, repeat: Infinity }} />}
+          </span>
+          <div className="flex-1">
+            <p className="text-[16px] font-semibold">Share live location</p>
+            <p className="text-[13px] text-white/60">{on ? (ago === null ? 'Finding you…' : ago < 1 ? 'Updated just now' : `Updated ${ago} min ago`) : 'Haanji guides callers to wherever you are'}</p>
+          </div>
+          <button onClick={() => (on ? stop() : start())} aria-label="Share live location" className={clsx('relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors', on ? 'bg-accent' : 'bg-white/20')}>
+            <motion.span layout transition={{ type: 'spring', stiffness: 500, damping: 32 }} className={clsx('absolute top-[3px] h-6 w-6 rounded-full shadow', on ? 'right-[3px] bg-ink' : 'left-[3px] bg-white')} />
+          </button>
+        </div>
+        {on && live?.place && (
+          <div className="border-t border-white/10 px-5 py-4">
+            <p className="text-[15px] font-medium">{live.place}</p>
+            {live.near.length > 0 && (
+              <ul className="mt-3 space-y-1.5">
+                {live.near.slice(0, 4).map((l) => (
+                  <li key={l.name} className="flex items-baseline gap-2 text-[13px] text-white/70">
+                    <span className="h-1.5 w-1.5 shrink-0 translate-y-[-2px] rounded-[2px] bg-accent" />
+                    <span className="flex-1 truncate">{l.name}</span>
+                    <span className="tabular-nums text-white/45">{l.m} m {l.dir}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+      {error && <ErrorText>{error}</ErrorText>}
+      {on && <p className="text-[13px] leading-relaxed text-muted">Updates while Haanji is open on your phone. Add it to your home screen and keep it open when someone is on the way.</p>}
+
       <label className="block">
-        <span className="mb-1.5 block text-[14px] font-medium text-muted">Place</span>
-        <input className="field" maxLength={300} value={value?.address ?? ''} placeholder="Third Wave Coffee, 12th Main, Indiranagar" onChange={(e) => onChange({ ...value, address: e.target.value, at: stamp() })} />
+        <span className="mb-1.5 block text-[14px] font-medium text-muted">Extra instructions (optional)</span>
+        <input className="field" maxLength={300} value={value?.label ?? ''} placeholder="Upstairs, table by the window" onChange={(e) => onChange({ ...value, label: e.target.value })} />
       </label>
-      <label className="block">
-        <span className="mb-1.5 block text-[14px] font-medium text-muted">How to find me there</span>
-        <input className="field" maxLength={300} value={value?.label ?? ''} placeholder="Table by the window, upstairs" onChange={(e) => onChange({ ...value, label: e.target.value })} />
-      </label>
-      {(value?.address || value?.label) && (
-        <button onClick={() => onChange({})} className="flex items-center gap-1.5 text-[14px] font-semibold text-ink/60"><X className="h-4 w-4" /> Clear, I’ve left</button>
+      {!on && (
+        <label className="block">
+          <span className="mb-1.5 block text-[14px] font-medium text-muted">Or type where you are</span>
+          <input className="field" maxLength={300} value={value?.address ?? ''} placeholder="Third Wave Coffee, 12th Main, Indiranagar"
+            onChange={(e) => onChange({ ...value, address: e.target.value, at: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) })} />
+        </label>
       )}
     </>
   )
 }
-

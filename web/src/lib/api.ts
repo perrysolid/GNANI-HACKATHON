@@ -54,7 +54,10 @@ export type Knowledge = {
   rides?: { pickup?: string; custom?: string; identify?: string; note?: string }
   status?: { state?: string; back_at?: string; message?: string }
   notes?: { say?: string; never?: string }
+  business?: { kind?: string; name?: string; answers?: Record<string, string> }
 }
+export type Landmark = { name: string; kind: string; m: number; dir: string }
+export type LiveLocation = { place: string; near: Landmark[]; at: string }
 export type Profile = {
   purposes?: ('general' | 'away' | 'family')[]
   my_language?: Lang
@@ -63,6 +66,7 @@ export type Profile = {
   address?: Address
   voice?: string
   knowledge?: Knowledge
+  live?: LiveLocation & { lat: number; lng: number }
 }
 export type FamilyMember = {
   id: number; relation: string; name: string; phone: string; language: Lang
@@ -78,13 +82,19 @@ export type ShieldResult = {
   signals: { category: string; phrase: string }[]; model_note: string
 }
 
+export type Profession = { id: string; label: string; questions: { id: string; text: string }[] }
+
 export const api = {
+  catalog: () => request<{ professions: Profession[] }>('/api/catalog'),
   config: () => request<{ haanji_number: string; otp_dev_mode: boolean }>('/api/auth/config'),
   sendCode: (phone: string, channel: 'sms' | 'voice') =>
     request<{ session_id: string; dev_code: string | null }>('/api/auth/send', json('POST', { phone, channel })),
   verifyCode: (session_id: string, code: string, name: string) =>
     request<{ token: string; onboarded: boolean; name: string }>('/api/auth/verify', json('POST', { session_id, code, name })),
   me: () => request<Me>('/api/me'),
+  shareLocation: (lat: number, lng: number, accuracy: number) =>
+    request<LiveLocation>('/api/me/location', json('POST', { lat, lng, accuracy })),
+  stopLocation: () => request<{ ok: true }>('/api/me/location', json('DELETE')),
   claimNumber: () => request<Me>('/api/me/number', json('POST')),
   updateMe: (patch: Partial<Profile> & { name?: string; onboarded?: boolean }) => request<Me>('/api/me', json('PATCH', patch)),
   addFamily: (f: Omit<FamilyMember, 'id'>) => request<FamilyMember>('/api/family', json('POST', f)),
