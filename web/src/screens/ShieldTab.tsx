@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { AlertTriangle, Phone, PhoneCall, ShieldCheck, ShieldX } from 'lucide-react'
+import { AlertTriangle, Ear, Phone, PhoneCall, ShieldCheck, ShieldX } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { clsx } from 'clsx'
 import { useState } from 'react'
@@ -36,6 +36,13 @@ export function ShieldTab() {
       <PageHeader title="Shield" sub="Got a strange call? Tell Haanji what they said." />
 
       <div className="px-5">
+        <Link to="/guard" className="mt-3 flex items-center gap-4 rounded-3xl bg-accent p-5 text-ink active:scale-[0.98] transition">
+          <span className="grid h-11 w-11 place-items-center rounded-xl bg-ink text-accent"><Ear className="h-5 w-5" /></span>
+          <div className="flex-1">
+            <p className="text-[16px] font-semibold">Guard a call on speaker</p>
+            <p className="text-[13px] text-ink/60">Haanji listens and warns out loud if it’s a scam</p>
+          </div>
+        </Link>
         <Link to="/practice?as=screen" className="mt-3 flex items-center gap-4 rounded-3xl bg-ink p-5 text-white active:scale-[0.98] transition">
           <span className="grid h-11 w-11 place-items-center rounded-xl bg-white/10"><PhoneCall className="h-5 w-5" /></span>
           <div className="flex-1">

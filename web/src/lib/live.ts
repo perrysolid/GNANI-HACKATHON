@@ -24,10 +24,12 @@ export type LiveEvent =
   | { type: 'summary'; text: string }
   | { type: 'ended'; reason: string }
   | { type: 'error'; message: string }
+  | { type: 'verdict'; level: 'scam' | 'suspicious' | 'no_signs'; signals: { category: string; phrase: string }[]; note: string }
+  | { type: 'alarm'; language: string; text: string }
 
-function wsUrl() {
+export function wsUrl(path: string) {
   const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || 'http://localhost:8000'
-  return base.replace(/^http/, 'ws') + '/api/live'
+  return base.replace(/^http/, 'ws') + path
 }
 
 export class LiveCall {
@@ -49,7 +51,8 @@ export class LiveCall {
   private speakTimer?: number
   closed = false
 
-  async start(persona: 'rider' | 'screen') {
+  /** path: /api/live for a practice call, /api/guard to listen to a call on speaker. */
+  async start(persona: 'rider' | 'screen', path = '/api/live') {
     this.mic = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     })
@@ -57,7 +60,7 @@ export class LiveCall {
     this.inCtx = new AudioContext()
     await Promise.all([this.outCtx.resume(), this.inCtx.resume()])
 
-    const ws = new WebSocket(wsUrl())
+    const ws = new WebSocket(wsUrl(path))
     ws.binaryType = 'arraybuffer'
     this.ws = ws
     await new Promise<void>((resolve, reject) => {
@@ -150,8 +153,8 @@ export class LiveCall {
     if (v !== this.speaking) { this.speaking = v; this.onSpeaking(v) }
   }
 
-  hangup() {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'hangup' }))
+  hangup(kind: 'hangup' | 'stop' = 'hangup') {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: kind }))
     this.flush()
     this.stopMic()
   }

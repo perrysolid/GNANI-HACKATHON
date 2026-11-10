@@ -44,6 +44,7 @@ export const SIGNAL_LABEL: Record<string, string> = {
   secrecy: 'Told them to keep it secret or stay on the call',
   urgency: 'Pushed them to act right now',
   lure: 'Promised a prize, refund or easy money',
+  relative: 'Said a son or daughter is arrested or hurt',
 }
 
 /** `#` must be encoded inside a tel: link or the dialler drops it. */
