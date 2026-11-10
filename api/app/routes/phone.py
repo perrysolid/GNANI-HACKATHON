@@ -31,6 +31,8 @@ router = APIRouter()
 log = logging.getLogger("haanji.phone")
 
 MIN_CHUNK = 3200  # Exotel: >= 3.2 KB, <= 100 KB, multiple of 320 bytes
+OWNER_SPEECH_RMS = 700  # 16-bit PCM level that counts as the owner talking
+OWNER_HANG_FRAMES = 20  # keep sending ~0.6 s after they stop, so words aren't clipped
 STEP = 320
 
 
@@ -199,7 +201,28 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
     async def on_audio(b: bytes):
         if not b or b[0] != state["turn"]:
             return
+        hub.publish_audio(uid, 1, b[1:])
         chunks, state["buf"] = frames(state["buf"] + b[1:], size=size)
+        await push(chunks)
+
+    # The owner on the call: their voice goes straight to the caller. Only speech is sent
+    # (silence would queue behind Haanji's audio), and speaking cuts Haanji off.
+    voice = {"buf": b"", "hang": 0}
+
+    async def owner_audio(pcm: bytes):
+        loud = audioop.rms(pcm, 2) > OWNER_SPEECH_RMS
+        if loud:
+            if voice["hang"] == 0 and state["turn"] != -1:
+                state["turn"], state["buf"] = -1, b""
+                await send("clear")
+                await call.interrupt()
+            voice["hang"] = OWNER_HANG_FRAMES
+            call.owner_spoke()
+        elif voice["hang"] == 0:
+            return
+        else:
+            voice["hang"] -= 1
+        chunks, voice["buf"] = frames(voice["buf"] + pcm, final=voice["hang"] == 0, size=size)
         await push(chunks)
 
     call = LiveCall(persona=persona, owner_name=owner, profile=profile, protected=protected,
@@ -211,7 +234,9 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
                 m = json.loads(await ws.receive_text())
                 ev = m.get("event")
                 if ev == "media":
-                    await call.feed(wire.decode((m.get("media") or {}).get("payload") or ""))
+                    pcm = wire.decode((m.get("media") or {}).get("payload") or "")
+                    hub.publish_audio(uid, 0, pcm)
+                    await call.feed(pcm)
                 elif ev == "mark":
                     played.set()
                 elif ev == "stop":
@@ -220,6 +245,7 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
             pass
         call.ended.set()
 
+    call.owner_audio = owner_audio
     hub.attach(uid, call)
     hub.publish(uid, {"type": "call_start", "caller": caller, "language": call.home_lang, "manual": call.manual})
     runner = asyncio.create_task(call.run())
@@ -293,7 +319,7 @@ async def twilio_stream(ws: WebSocket):
     want = get_settings().phone_stream_secret
     ok = secrets.compare_digest(str(params.get("secret", "")), want) if want else not get_settings().is_prod
     persona = "screen" if params.get("persona") == "screen" else "rider"
-    uid = _resolve_owner(caller, str(params.get("owner") or "")) if ok else None
+    uid = _resolve_owner(str(params.get("from", "")), str(params.get("owner") or "")) if ok else None
     ctx = call_context(uid, persona) if uid else None
     if not ctx or not get_settings().gnani_api_key:
         log.warning("twilio stream rejected (auth=%s, owner=%r)", ok, params.get("owner"))

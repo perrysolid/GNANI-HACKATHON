@@ -127,7 +127,9 @@ async def live(ws: WebSocket):
 @router.websocket("/api/watch")
 async def watch(ws: WebSocket):
     """The owner's app during a phone call: live captions in, typed replies out.
-    First message: {"type":"start","token":..}. Then {"type":"say","text":..} or {"type":"mode","manual":bool}."""
+    First message: {"type":"start","token":..}. Then {"type":"say","text":..}, {"type":"mode","manual":bool},
+    {"type":"join","on":bool} (hear the call and talk on it) and, when joined, binary 16 kHz PCM16 mic audio.
+    Joined owners receive binary call audio: 1 byte source (0 caller, 1 Haanji) + 16 kHz PCM16."""
     await ws.accept()
     try:
         start = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=10))
@@ -145,17 +147,27 @@ async def watch(ws: WebSocket):
 
     async def forward():
         while True:
-            await ws.send_json(await q.get())
+            item = await q.get()
+            await (ws.send_bytes(item) if isinstance(item, bytes) else ws.send_json(item))
 
     sender = asyncio.create_task(forward())
     try:
         while True:
-            m = json.loads(await ws.receive_text())
+            raw = await ws.receive()
+            if raw["type"] == "websocket.disconnect":
+                break
             call = hub.active(uid)
+            if raw.get("bytes"):  # owner's mic, while on the call with them
+                if call and hub.joined(uid) and getattr(call, "owner_audio", None):
+                    await call.owner_audio(raw["bytes"])
+                continue
+            m = json.loads(raw.get("text") or "{}")
             if m.get("type") == "mode":
                 hub.manual[uid] = bool(m.get("manual"))
                 if call:
                     call.manual = hub.manual[uid]
+            elif m.get("type") == "join":
+                hub.join(uid, q, bool(m.get("on")))
             elif m.get("type") == "say" and call:
                 hub.publish(uid, {"type": "typed", "text": str(m.get("text", ""))[:400]})
                 await call.say(str(m.get("text", "")), my_lang)

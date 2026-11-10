@@ -1,46 +1,64 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowUp, Captions as CaptionsIcon } from 'lucide-react'
+import { ArrowUp, Captions as CaptionsIcon, Headphones } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { token } from '../lib/api'
 import { langNative } from '../lib/data'
-import { wsUrl } from '../lib/live'
+import { CallLink, wsUrl } from '../lib/live'
 import { useApp } from '../lib/store'
-import { Backdrop, BackButton } from '../components/ui'
+import { Backdrop, BackButton, ErrorText } from '../components/ui'
 
 type Line = { id: number; who: 'caller' | 'haanji' | 'you'; text: string; lang?: string }
 const QUICK = ['Please wait a minute', 'I’m coming down', 'Leave it at the gate', 'Call me back later', 'Yes', 'No']
 
-/** Live captions of a call to your Haanji number. Type, and Haanji says it in the caller's language. */
+const JOIN_KEY = 'haanji.join'
+const readJoin = () => { try { return localStorage.getItem(JOIN_KEY) === '1' } catch { return false } }
+
+/**
+ * Calls to your Haanji number, live: captions as the caller speaks, typed replies spoken in
+ * their language, and "on the call with me": you, Haanji and the caller talk together.
+ */
 export function Captions() {
   const nav = useNavigate()
   const { me, haanjiNumber } = useApp()
   const ws = useRef<WebSocket | null>(null)
   const [connected, setConnected] = useState(false)
   const [inCall, setInCall] = useState(false)
-  const [manual, setManual] = useState(true)
+  const [manual, setManual] = useState(() => { try { return localStorage.getItem('haanji.typing') === '1' } catch { return false } })
   const [lines, setLines] = useState<Line[]>([])
   const [ended, setEnded] = useState('')
   const [text, setText] = useState('')
   const seq = useRef(0)
   const end = useRef<HTMLDivElement>(null)
+  const link = useRef<CallLink | null>(null)
+  const [joined, setJoined] = useState(false)
+  const [wantJoin] = useState(readJoin)
+  const [level, setLevel] = useState(0)
+  const [joinErr, setJoinErr] = useState('')
 
   useEffect(() => {
     let alive = true, retry: number
     const add = (l: Omit<Line, 'id'>) => setLines((ls) => [...ls, { ...l, id: ++seq.current }])
     const open = () => {
       const s = new WebSocket(wsUrl('/api/watch'))
+      s.binaryType = 'arraybuffer'
       ws.current = s
       s.onopen = () => {
         s.send(JSON.stringify({ type: 'start', token: token.get() }))
-        s.send(JSON.stringify({ type: 'mode', manual }))
+        s.send(JSON.stringify({ type: 'mode', manual: manualRef.current }))
+        if (link.current) s.send(JSON.stringify({ type: 'join', on: true }))
         setConnected(true)
       }
       s.onmessage = (m) => {
+        if (typeof m.data !== 'string') { link.current?.play(m.data); return }
         const e = JSON.parse(m.data)
-        if (e.type === 'watching') setInCall(e.in_call)
-        if (e.type === 'call_start') { setInCall(true); setEnded(''); setLines([]) }
+        if (e.type === 'watching') { setInCall(e.in_call); if (link.current) link.current.live = e.in_call }
+        if (e.type === 'call_start') {
+          setInCall(true); setEnded(''); setLines([])
+          if (link.current) { link.current.live = true; link.current.chime(); navigator.vibrate?.([200, 100, 200]) }
+        }
+        if (e.type === 'interrupted') link.current?.flushHaanji()
         if (e.type === 'heard') add({ who: 'caller', text: e.text, lang: e.language })
         if (e.type === 'reply_start') add({ who: 'haanji', text: '' })
         if (e.type === 'reply_text') setLines((ls) => {
@@ -50,17 +68,46 @@ export function Captions() {
           return next
         })
         if (e.type === 'typed') add({ who: 'you', text: e.text })
-        if (e.type === 'call_end') { setInCall(false); setEnded(e.summary || 'Call ended') }
+        if (e.type === 'call_end') { setInCall(false); setEnded(e.summary || 'Call ended'); if (link.current) link.current.live = false }
       }
       s.onclose = () => { setConnected(false); if (alive) retry = window.setTimeout(open, 3000) }
     }
     open()
-    return () => { alive = false; window.clearTimeout(retry); ws.current?.close() }
+    return () => { alive = false; window.clearTimeout(retry); ws.current?.close(); link.current?.stop() }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const manualRef = useRef(manual)
+  manualRef.current = manual
+
+  const join = async (on: boolean) => {
+    setJoinErr('')
+    try { localStorage.setItem(JOIN_KEY, on ? '1' : '0') } catch { /* private mode */ }
+    if (!on) {
+      link.current?.stop(); link.current = null; setJoined(false); setLevel(0)
+      ws.current?.send(JSON.stringify({ type: 'join', on: false }))
+      return
+    }
+    const l = new CallLink()
+    l.onLevel = setLevel
+    try {
+      await l.start((f) => { if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(f) })
+    } catch (e: any) {
+      setJoinErr(e?.name === 'NotAllowedError' ? 'Allow the microphone to join calls.' : 'Couldn’t start the microphone.')
+      l.stop(); return
+    }
+    l.live = inCall
+    link.current = l
+    setJoined(true)
+    ws.current?.send(JSON.stringify({ type: 'join', on: true }))
+  }
 
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [lines, ended])
 
-  const setMode = (m: boolean) => { setManual(m); ws.current?.send(JSON.stringify({ type: 'mode', manual: m })) }
+  const setMode = (m: boolean) => {
+    setManual(m)
+    try { localStorage.setItem('haanji.typing', m ? '1' : '0') } catch { /* private mode */ }
+    ws.current?.send(JSON.stringify({ type: 'mode', manual: m }))
+  }
   const say = (t: string) => {
     const v = t.trim()
     if (!v || !inCall) return
@@ -81,7 +128,7 @@ export function Captions() {
       </header>
 
       <div className="px-6 pt-3">
-        <h1 className="title">Live captions</h1>
+        <h1 className="title">Live calls</h1>
         <div className="mt-5 flex rounded-2xl bg-ink/[0.06] p-1">
           {[[false, 'Haanji answers'], [true, 'I’ll type']].map(([m, label]) => (
             <button key={String(m)} onClick={() => setMode(m as boolean)} className={clsx('relative flex-1 rounded-xl py-2.5 text-[14px] font-semibold transition-colors', manual === m ? 'text-white' : 'text-ink/60')}>
@@ -90,6 +137,23 @@ export function Captions() {
             </button>
           ))}
         </div>
+        <button onClick={() => join(!joined)} className={clsx('mt-3 flex w-full items-center gap-4 rounded-3xl p-4 text-left transition-colors', joined ? 'bg-ink text-white' : 'border border-line bg-card')}>
+          <span className={clsx('relative grid h-11 w-11 shrink-0 place-items-center rounded-xl', joined ? 'bg-accent text-ink' : 'bg-ink/[0.06]')}>
+            {joined && inCall && <motion.span className="absolute inset-0 rounded-xl bg-accent/40" animate={{ scale: 1 + level * 0.5 }} transition={{ duration: 0.08 }} />}
+            <Headphones className="relative h-5 w-5" />
+          </span>
+          <div className="flex-1">
+            <p className="text-[16px] font-semibold">On the call with me</p>
+            <p className={clsx('text-[13px]', joined ? 'text-white/60' : 'text-muted')}>
+              {joined ? (inCall ? 'You’re on the call. Talk any time.' : 'You’ll join the next call here.') : wantJoin ? 'Tap to turn on again' : 'You, Haanji and the caller together'}
+            </p>
+          </div>
+          <span className={clsx('relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors', joined ? 'bg-accent' : 'bg-ink/15')}>
+            <motion.span layout transition={{ type: 'spring', stiffness: 500, damping: 32 }} className={clsx('absolute top-[3px] h-6 w-6 rounded-full shadow', joined ? 'right-[3px] bg-ink' : 'left-[3px] bg-white')} />
+          </span>
+        </button>
+        {joinErr && <div className="mt-2"><ErrorText>{joinErr}</ErrorText></div>}
+        {joined && <p className="mt-2 px-1 text-[13px] leading-relaxed text-muted">Haanji steps back while you talk and picks up if you go quiet. Headphones stop echo.</p>}
       </div>
 
       <div className="mt-4 flex-1 space-y-3 overflow-y-auto px-5 pb-4">
