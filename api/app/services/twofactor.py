@@ -5,6 +5,7 @@ code is always 123456.
 """
 
 import logging
+import secrets
 import uuid
 
 import httpx
@@ -33,8 +34,10 @@ async def send(phone: str, channel: str) -> str:
     if not key:
         return f"dev-{uuid.uuid4().hex}"
     path = "VOICE" if channel == "voice" else "SMS"
+    # Our own 6-digit code: AUTOGEN length depends on the account template (often 4).
+    otp = f"{secrets.randbelow(900000) + 100000}"
     async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(f"{_BASE}/{key}/{path}/{phone}/AUTOGEN")
+        r = await client.get(f"{_BASE}/{key}/{path}/{phone}/{otp}")
     data = r.json() if r.content else {}
     if data.get("Status") != "Success":
         log.warning("2factor send failed: %s", data)

@@ -155,7 +155,7 @@ export function OtpStep({ draft, update, onSignedIn }: StepProps & { onSignedIn:
         </>
       }
       footer={
-        <button className="btn" disabled={code.length < CODE_LENGTH || busy} onClick={() => verify(code)}>
+        <button className="btn" disabled={code.length < 4 || busy} onClick={() => verify(code)}>
           {busy ? <Spinner /> : 'Verify'}
         </button>
       }
