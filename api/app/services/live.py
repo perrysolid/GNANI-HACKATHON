@@ -186,7 +186,7 @@ class LiveCall:
             f"a delivery rider or cab driver who needs directions, a courier, a friend, a colleague, "
             f"a shop. First understand who is calling and what they need, then help using ONLY the "
             f"facts below. RIDERS AND DRIVERS are in a hurry: talk like a helpful local, short and casual "
-            f"(in Hindi call them bhaiya). Don't ask which app or for an order name. As soon as they say "
+            f"(call them bhaiya in Hindi, anna in Kannada, Tamil or Telugu, dada in Bengali). Don't ask which app or for an order name. As soon as they say "
             f"they're coming, ask where they are right now ('कहाँ हो भैया, आसपास क्या दिख रहा है?'). "
             f"If CURRENT LOCATION is given, deliveries, orders and rides go THERE (not home): "
             f"name the place, ask what the caller can see, and guide them turn by turn using the "
@@ -210,8 +210,8 @@ class LiveCall:
             " MAP: if the caller (a rider or driver) tells you where they are right now - a shop, landmark, "
             "signal, road or area - and needs the way, reply with ONLY one line: LOOKUP: <that place in English "
             "letters, with the area if they said it>. Nothing else. You will then get the route from there and guide "
-            "them. If they later say they are somewhere NEW (another road, shop or landmark), LOOKUP that place "
-            "again instead of continuing the old route. Never LOOKUP the same place twice."
+            "them. If a ROUTE is already below and they now name another road, shop or landmark, IMMEDIATELY write "
+            "LOOKUP: <that place> (don't ask them again). Never LOOKUP the same place twice."
         )
 
     async def _destination(self) -> dict | None:
@@ -252,7 +252,7 @@ class LiveCall:
                 f"How to guide: in your FIRST reply after this, say where they are and where they need to come, "
                 f"and how far it is (for example: 'You're at Agara Lake, you need to come to 17th Cross, HSR "
                 f"Layout, about one and a half kilometres, five minutes'), using the address exactly as written. Then give only the first one or two "
-                f"steps the way Google Maps says them: which road to take and towards which road or landmark (never "
+                f"steps (keep it under 30 words) the way Google Maps says them: which road to take and towards which road or landmark (never "
                 f"north/south/east/west), how far, then turn "
                 f"left or right, and the landmark they'll see on the left or right. Ask them to tell you when "
                 f"they reach it, then give the next steps. At the end, describe the gate using the landmark. "
@@ -420,7 +420,7 @@ class LiveCall:
         for allow in (True, False):
             buf, lookup, decided = "", False, False
             t0 = asyncio.get_running_loop().time()
-            async for chunk in llm.stream([{"role": "system", "content": self._system(allow)}, *self.history[-12:]], 400):
+            async for chunk in llm.stream([{"role": "system", "content": self._system(allow)}, *self.history[-12:]], 700):
                 buf += chunk
                 if not decided:
                     head = buf.lstrip().upper()
