@@ -115,6 +115,7 @@ class LiveCall:
         if errand is not None:
             self.home_lang = errand.language
         self.caller_lang = self.home_lang
+        self._lang_vote = ""  # a language the caller used once; switch if they keep using it
         self.turn = 0
         self.reply_task: asyncio.Task | None = None
         self.verdict = "no_signs"
@@ -155,7 +156,7 @@ class LiveCall:
         common = (
             f"You are Haanji, a polite phone assistant. You are ON A LIVE PHONE CALL, so reply "
             f"ONLY in spoken {lang}, in one or two short sentences (under 25 words). No lists, no "
-            f"markdown, no emojis. Write numbers as words. If the caller switches language, follow them. "
+            f"markdown, no emojis. Write numbers as words. Stay in {lang} even if they use a few English words. "
             f"Never share OTPs, bank details, Aadhaar, or anything not given to you here."
         )
         if self.persona == "errand" and self.errand is not None:
@@ -347,8 +348,18 @@ class LiveCall:
             self.ended.set()
 
     async def _on_utterance(self, text: str, lang: str) -> None:
-        if is_language(lang):
-            self.caller_lang = lang
+        if is_language(lang) and lang != self.caller_lang:
+            # Stay in the language the call started in. Switch only when the caller really changes
+            # language: a long sentence (8+ words) in the new one, or two turns in a row. One English
+            # word ("okay", "location", "sir") never switches.
+            words = len(text.split())
+            if words >= 3 and self._lang_vote == lang or words >= 8:
+                self.caller_lang = lang
+                self._lang_vote = ""
+            else:
+                self._lang_vote = lang
+        else:
+            self._lang_vote = ""
         self.transcript.append({"who": "caller", "text": text, "lang": self.caller_lang})
         self.history.append({"role": "user", "content": text})
         await self.send_json({"type": "heard", "text": text, "language": self.caller_lang})
