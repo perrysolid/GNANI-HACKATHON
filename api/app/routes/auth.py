@@ -116,4 +116,5 @@ def demo_sign_in(body: DemoIn, db: Session = Depends(get_db)):
 @router.get("/config")
 def public_config():
     s = get_settings()
-    return {"haanji_number": s.haanji_number, "otp_dev_mode": not s.twofactor_api_key, "demo_login": s.demo_login}
+    return {"haanji_number": s.haanji_number, "otp_dev_mode": not s.twofactor_api_key, "demo_login": s.demo_login,
+            "maps_key": s.google_maps_key}

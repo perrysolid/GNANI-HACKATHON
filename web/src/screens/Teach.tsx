@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Briefcase, Car, Check, Clock, LocateFixed, MapPin, NotebookPen, Package } from 'lucide-react'
+import { Briefcase, Car, Check, ChevronRight, Clock, LocateFixed, Map as MapIcon, MapPin, NotebookPen, Package } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, type Address, type Knowledge, type LiveLocation, type Profession, type Profile } from '../lib/api'
 import { useApp } from '../lib/store'
 import { Backdrop, BackButton, ErrorText, Spinner, Toggle } from '../components/ui'
+import { MapPicker, type Picked } from '../components/MapPicker'
 
 /* ---------- what can be taught ------------------------------------------------ */
 
@@ -20,7 +21,8 @@ export const TYPES = [
 export type TypeId = (typeof TYPES)[number]['id']
 
 const LEAVE = [['door', 'At the door'], ['guard', 'With security'], ['reception', 'At reception'], ['me', 'Hand it to me'], ['neighbour', 'With a neighbour']]
-const PICKUP = [['home', 'Home'], ['work', 'Work'], ['now', 'Where I am'], ['custom', 'Somewhere else']]
+const PICKUP = [['home', 'Home'], ['work', 'Work'], ['now', 'Where I am now'], ['custom', 'Somewhere else']]
+const DROP_TO = [['home', 'Home'], ['now', 'Where I am now']]
 const STATES = [['available', 'Free soon'], ['meeting', 'In a meeting'], ['driving', 'Driving'], ['travelling', 'Travelling'], ['sleeping', 'Sleeping'], ['busy', 'Busy']]
 
 const PROF_LABEL: Record<string, string> = { clinic: 'Clinic', shop: 'Shop', tutor: 'Classes', services: 'Home services', salon: 'Salon', food: 'Food', other: 'Work' }
@@ -143,6 +145,7 @@ export function Teach() {
         <motion.section key={type + sub} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }} className="flex-1 space-y-5 px-6 pb-16 pt-6">
           {type === 'places' && sub === 'home' && (
             <>
+              <PickOnMap title="Your home" onPick={(p) => setA({ area: p.address })} />
               <Field label="Flat, floor, building" value={addr.house} onChange={(v) => setA({ house: v })} placeholder="302, 3rd floor, Sai Residency" />
               <Field label="Street and area" value={addr.area} onChange={(v) => setA({ area: v })} placeholder="4th Cross, HSR Layout Sector 2" />
               <Field label="Landmark" value={addr.landmark} onChange={(v) => setA({ landmark: v })} placeholder="Opposite the Shani temple, blue gate" />
@@ -152,6 +155,7 @@ export function Teach() {
           {type === 'places' && (sub === 'work' || sub === 'other') && (
             <>
               {sub === 'other' && <Field label="What is it" value={get('places.other.name')} onChange={(v) => set('places.other.name', v)} placeholder="Gym, PG, parents’ home" />}
+              <PickOnMap title={sub === 'work' ? 'Your work' : 'The place'} onPick={(p) => set(`places.${sub}.address`, [p.label, p.address].filter(Boolean).join(', '))} />
               <Field label="Address" value={get(`places.${sub}.address`)} onChange={(v) => set(`places.${sub}.address`, v)} placeholder={sub === 'work' ? 'Embassy Tech Village, Block C' : 'Address'} />
               <Field label="Landmark" value={get(`places.${sub}.landmark`)} onChange={(v) => set(`places.${sub}.landmark`, v)} placeholder="Gate 3, next to the food court" />
               <Field label="Note" value={get(`places.${sub}.note`)} onChange={(v) => set(`places.${sub}.note`, v)} placeholder="Ask for me at reception" />
@@ -161,6 +165,8 @@ export function Teach() {
 
           {type === 'delivery' && sub && (
             <>
+              <Chips label="Deliver to" options={DROP_TO} value={get(`delivery.${sub}.to`) || 'home'} onChange={(v) => set(`delivery.${sub}.to`, v || 'home')} />
+              {get(`delivery.${sub}.to`) === 'now' && <RightNow compact />}
               <Chips label="Where should they leave it" options={LEAVE} value={get(`delivery.${sub}.leave`)} onChange={(v) => set(`delivery.${sub}.leave`, v)} />
               <div className="border-y border-line">
                 <Toggle on={!!get(`delivery.${sub}.call_first`)} onChange={(v) => set(`delivery.${sub}.call_first`, v)} label="Call me before reaching" hint="Haanji tells the rider to ring you" />
@@ -172,7 +178,13 @@ export function Teach() {
           {type === 'rides' && (
             <>
               <Chips label="Usual pickup" options={PICKUP} value={k.rides?.pickup} onChange={(v) => set('rides.pickup', v)} />
-              {k.rides?.pickup === 'custom' && <Field label="Pickup point" value={k.rides?.custom} onChange={(v) => set('rides.custom', v)} placeholder="Metro station, exit B" />}
+              {k.rides?.pickup === 'now' && <RightNow compact />}
+              {k.rides?.pickup === 'custom' && (
+                <>
+                  <PickOnMap title="Pickup point" onPick={(p) => set('rides.custom', [p.label, p.address].filter(Boolean).join(', '))} />
+                  <Field label="Pickup point" value={k.rides?.custom} onChange={(v) => set('rides.custom', v)} placeholder="Metro station, exit B" />
+                </>
+              )}
               <Field label="How the driver spots you" value={k.rides?.identify} onChange={(v) => set('rides.identify', v)} placeholder="Grey hoodie, standing by the ATM" />
               <Field label="Note for the driver" value={k.rides?.note} onChange={(v) => set('rides.note', v)} placeholder="Two bags, need the boot" />
             </>
@@ -270,28 +282,61 @@ function Chips({ label, options, value, onChange }: { label: string; options: st
   )
 }
 
-/** Current location: one tap takes a GPS fix; orders and rides are guided there by nearby landmarks. */
-function RightNow({ value, onChange }: { value?: { label?: string; address?: string; at?: string }; onChange: (v: { label?: string; address?: string; at?: string }) => void }) {
+/** Opens the map; the picked address fills a field. */
+function PickOnMap({ title, onPick }: { title: string; onPick: (p: Picked) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button onClick={() => setOpen(true)} className="flex w-full items-center gap-3.5 rounded-2xl border border-line bg-card p-3.5 text-left active:bg-ink/[0.03]">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ink text-accent"><MapIcon className="h-5 w-5" /></span>
+        <span className="flex-1">
+          <span className="block text-[15px] font-semibold">Pick on map</span>
+          <span className="block text-[13px] text-muted">Search or use your location, then fine-tune the pin</span>
+        </span>
+        <ChevronRight className="h-[18px] w-[18px] text-ink/30" />
+      </button>
+      <MapPicker open={open} title={title} locate onClose={() => setOpen(false)} onPick={onPick} />
+    </>
+  )
+}
+
+/** Current location: pick it on the map (starts at your GPS); orders and rides are guided there by nearby landmarks. */
+function RightNow({ value, onChange, compact }: { value?: { label?: string; address?: string; at?: string }; onChange?: (v: { label?: string; address?: string; at?: string }) => void; compact?: boolean }) {
   const me = useApp((s) => s.me)
+  const setMe = useApp((s) => s.setMe)
+  const mapsKey = useApp((s) => s.mapsKey)
   const [loc, setLoc] = useState<LiveLocation | null>(me?.profile.live ?? null)
   const [busy, setBusy] = useState(false)
+  const [picking, setPicking] = useState(false)
   const [err, setErr] = useState('')
   const time = loc?.at ? new Date(loc.at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''
+  const live = me?.profile.live
+  const start = live?.lat ? { lat: live.lat, lng: live.lng } : undefined
 
+  const saved = (l: LiveLocation, lat: number, lng: number) => {
+    setLoc(l)
+    if (me) setMe({ ...me, profile: { ...me.profile, live: { ...l, lat, lng } } })
+  }
+  const pick = async (p: Picked) => saved(await api.shareLocation(p.lat, p.lng, 10, p.label), p.lat, p.lng)
+
+  // Without a map key: straight GPS.
   const take = () => {
+    if (mapsKey) { setPicking(true); return }
     if (!navigator.geolocation) { setErr('This browser can’t share location.'); return }
     setBusy(true); setErr('')
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
-        try { setLoc(await api.shareLocation(coords.latitude, coords.longitude, coords.accuracy)) }
+        try { saved(await api.shareLocation(coords.latitude, coords.longitude, coords.accuracy), coords.latitude, coords.longitude) }
         catch (e: any) { setErr(e.message) } finally { setBusy(false) }
       },
       (e) => { setBusy(false); setErr(e.code === e.PERMISSION_DENIED ? 'Location is blocked. Allow it for this site in your browser settings.' : 'Can’t get your location right now. Try again outside or near a window.') },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
     )
   }
-  const clear = async () => { setLoc(null); await api.stopLocation().catch(() => {}) }
-
+  const clear = async () => {
+    setLoc(null); await api.stopLocation().catch(() => {})
+    if (me) { const { live: _, ...rest } = me.profile; setMe({ ...me, profile: rest }) }
+  }
   return (
     <>
       <div className="overflow-hidden rounded-3xl bg-ink text-white">
@@ -299,7 +344,7 @@ function RightNow({ value, onChange }: { value?: { label?: string; address?: str
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent text-ink"><LocateFixed className="h-5 w-5" /></span>
           <div className="flex-1">
             <p className="text-[16px] font-semibold">{loc ? 'Your current location' : 'Use my current location'}</p>
-            <p className="text-[13px] text-white/60">{loc ? `Shared at ${time}. Orders and rides come here.` : 'For an order or a ride to where you are now'}</p>
+            <p className="text-[13px] text-white/60">{loc ? `Set at ${time}. Orders and rides come here.` : 'Opens the map at your GPS; move the pin to your exact spot'}</p>
           </div>
         </div>
         {loc?.place && (
@@ -311,7 +356,7 @@ function RightNow({ value, onChange }: { value?: { label?: string; address?: str
                   <li key={l.name} className="flex items-baseline gap-2 text-[13px] text-white/70">
                     <span className="h-1.5 w-1.5 shrink-0 translate-y-[-2px] rounded-[2px] bg-accent" />
                     <span className="flex-1 truncate">{l.name}</span>
-                    <span className="tabular-nums text-white/45">{l.m} m {l.dir}</span>
+                    <span className="tabular-nums text-white/45">{l.m < 15 ? 'right here' : `${l.m} m ${l.dir}`}</span>
                   </li>
                 ))}
               </ul>
@@ -320,13 +365,15 @@ function RightNow({ value, onChange }: { value?: { label?: string; address?: str
         )}
         <div className="flex gap-2 px-5 pb-5">
           <motion.button whileTap={{ scale: 0.97 }} onClick={take} disabled={busy} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-accent text-[15px] font-semibold text-ink disabled:opacity-60">
-            {busy ? <Spinner /> : loc ? 'Update location' : 'Use my current location'}
+            {busy ? <Spinner /> : loc ? 'Update location' : 'Set my current location'}
           </motion.button>
           {loc && <button onClick={clear} className="h-12 rounded-2xl bg-white/10 px-4 text-[15px] font-semibold">Remove</button>}
         </div>
       </div>
       {err && <ErrorText>{err}</ErrorText>}
       {loc && <p className="text-[13px] leading-relaxed text-muted">Haanji uses it for 12 hours, then goes back to your home address.</p>}
+      <MapPicker open={picking} title="Where you are now" start={start} locate onClose={() => setPicking(false)} onPick={pick} />
+      {!compact && onChange && (<>
 
       <label className="block">
         <span className="mb-1.5 block text-[14px] font-medium text-muted">Extra instructions (optional)</span>
@@ -339,6 +386,7 @@ function RightNow({ value, onChange }: { value?: { label?: string; address?: str
             onChange={(e) => onChange({ ...value, address: e.target.value, at: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) })} />
         </label>
       )}
+      </>)}
     </>
   )
 }

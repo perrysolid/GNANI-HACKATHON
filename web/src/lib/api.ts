@@ -47,7 +47,7 @@ const json = (method: string, body?: unknown): RequestInit => ({ method, body: b
 export type Lang = string
 export type Address = { house: string; area: string; landmark: string; note: string }
 export type Place = { name?: string; address?: string; landmark?: string; note?: string }
-export type Drop = { leave?: string; call_first?: boolean; note?: string }
+export type Drop = { to?: string; leave?: string; call_first?: boolean; note?: string }
 export type Knowledge = {
   places?: { work?: Place; other?: Place; now?: { label?: string; address?: string; at?: string } }
   delivery?: { food?: Drop; grocery?: Drop; parcel?: Drop }
@@ -87,7 +87,7 @@ export type Profession = { id: string; label: string; questions: { id: string; t
 
 export const api = {
   catalog: () => request<{ professions: Profession[] }>('/api/catalog'),
-  config: () => request<{ haanji_number: string; otp_dev_mode: boolean; demo_login: boolean }>('/api/auth/config'),
+  config: () => request<{ haanji_number: string; otp_dev_mode: boolean; demo_login: boolean; maps_key?: string }>('/api/auth/config'),
   demoSignIn: (phone: string, name: string) =>
     request<{ token: string; onboarded: boolean; name: string }>('/api/auth/demo', json('POST', { phone, name })),
   sendCode: (phone: string, channel: 'sms' | 'voice') =>
@@ -95,8 +95,8 @@ export const api = {
   verifyCode: (session_id: string, code: string, name: string) =>
     request<{ token: string; onboarded: boolean; name: string }>('/api/auth/verify', json('POST', { session_id, code, name })),
   me: () => request<Me>('/api/me'),
-  shareLocation: (lat: number, lng: number, accuracy: number) =>
-    request<LiveLocation>('/api/me/location', json('POST', { lat, lng, accuracy })),
+  shareLocation: (lat: number, lng: number, accuracy: number, label = '') =>
+    request<LiveLocation>('/api/me/location', json('POST', { lat, lng, accuracy, label })),
   stopLocation: () => request<{ ok: true }>('/api/me/location', json('DELETE')),
   claimNumber: () => request<Me>('/api/me/number', json('POST')),
   updateMe: (patch: Partial<Profile> & { name?: string; onboarded?: boolean }) => request<Me>('/api/me', json('PATCH', patch)),

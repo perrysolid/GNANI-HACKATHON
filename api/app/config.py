@@ -37,6 +37,9 @@ class Settings:
     phone_stream_secret: str = os.getenv("PHONE_STREAM_SECRET", "")
     # Whose Haanji answers when the provider doesn't pass ?owner= (10-digit phone of a signed-up user).
     phone_owner: str = os.getenv("PHONE_OWNER", "")
+    # Google Maps Platform: map + place search in the app, addresses and landmarks on the server.
+    # A browser key by nature (the app loads it); restrict it to the Maps/Places/Geocoding APIs.
+    google_maps_key: str = os.getenv("GOOGLE_MAPS_KEY", "")
     # Hackathon demo: sign in with just a phone number (no SMS). Accounts verified by SMS still need the code.
     demo_login: bool = os.getenv("DEMO_LOGIN", "1") == "1"
 

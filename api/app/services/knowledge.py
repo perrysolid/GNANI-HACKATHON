@@ -38,7 +38,7 @@ PROFESSIONS: dict[str, dict] = {
 PLACE = ("name", "address", "landmark", "note")
 SCHEMA: dict[str, dict[str, tuple[str, ...]]] = {
     "places": {"work": PLACE, "other": PLACE, "now": ("label", "address", "at")},
-    "delivery": {k: ("leave", "call_first", "note") for k in ("food", "grocery", "parcel")},
+    "delivery": {k: ("to", "leave", "call_first", "note") for k in ("food", "grocery", "parcel")},
     "rides": {"_": ("pickup", "custom", "identify", "note")},
     "status": {"_": ("state", "back_at", "message")},
     "notes": {"_": ("say", "never")},
@@ -134,6 +134,8 @@ def facts(profile: dict, now: datetime | None = None) -> str:
     for key, label in (("food", "Food delivery"), ("grocery", "Grocery delivery"), ("parcel", "Parcels and couriers")):
         d = (k.get("delivery") or {}).get(key) or {}
         bits = []
+        if d.get("to") == "now":
+            bits.append("deliver to where they are right now (their CURRENT LOCATION), not home")
         if d.get("leave"):
             bits.append(LEAVE.get(d["leave"], d["leave"]))
         if d.get("call_first"):

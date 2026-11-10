@@ -132,6 +132,7 @@ class LocationIn(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
     accuracy: float = Field(default=0, ge=0, le=100_000)
+    label: str = Field(default="", max_length=200)  # a place picked from search, e.g. "Third Wave Coffee"
 
 
 @router.post("/me/location")
@@ -141,8 +142,11 @@ async def share_location(body: LocationIn, user: User = Depends(current_user), d
     from ..services.places import describe, distance_m
     live = dict((user.profile or {}).get("live") or {})
     moved = "lat" not in live or distance_m(live["lat"], live["lng"], body.lat, body.lng) > 40
-    if moved or not live.get("place"):
+    if moved or not live.get("place") or body.label != live.get("label", ""):
         live.update(await describe(body.lat, body.lng))
+        if body.label and not live["place"].startswith(body.label):
+            live["place"] = f"{body.label}, {live['place']}" if live["place"] else body.label
+        live["label"] = body.label
     live.update(lat=body.lat, lng=body.lng, acc=round(body.accuracy), at=datetime.now(timezone.utc).isoformat())
     user.profile = {**(user.profile or {}), "live": live}
     db.commit()
