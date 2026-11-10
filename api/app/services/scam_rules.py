@@ -1,0 +1,107 @@
+"""Deterministic scam signals for Indian phone fraud.
+
+Covers English, Hinglish (Latin script) and Hindi/Marathi (Devanagari), the way
+Prisma transcribes them. The verdict never says "safe": the best it says is
+that no known signs were heard.
+"""
+
+import re
+from dataclasses import dataclass
+
+# category -> (weight, patterns)
+SIGNALS: dict[str, tuple[int, list[str]]] = {
+    "credential": (4, [
+        r"\botp\b", r"ओटीपी", r"\bpin\b", r"पिन", r"\bcvv\b", r"password", r"पासवर्ड",
+        r"code (batao|bataiye|bolo|share)", r"कोड (बताओ|बताइए|बोलो)",
+        r"anydesk", r"any desk", r"teamviewer", r"screen ?share", r"स्क्रीन शेयर",
+        r"(app|apk) (download|install)", r"(ऐप|एप) (डाउनलोड|इंस्टॉल)",
+    ]),
+    "authority": (2, [
+        r"\bcbi\b", r"सीबीआई", r"police", r"पुलिस", r"पोलीस", r"customs?", r"कस्टम",
+        r"\bed\b officer", r"enforcement directorate", r"narcotics", r"नारकोटिक्स",
+        r"\brbi\b", r"आरबीआई", r"\btrai\b", r"ट्राई", r"income tax", r"इनकम टैक्स",
+        r"cyber (cell|crime)", r"साइबर", r"court", r"कोर्ट", r"judge", r"जज",
+        r"fedex", r"courier", r"कूरियर", r"parcel", r"पार्सल",
+    ]),
+    "threat": (2, [
+        r"digital arrest", r"डिजिटल अरेस्ट", r"arrest", r"अरेस्ट", r"गिरफ्तार", r"warrant", r"वारंट",
+        r"(account|khata|खाता|अकाउंट).{0,20}(block|freeze|band|बंद|ब्लॉक|फ्रीज)",
+        r"(sim|सिम).{0,15}(block|band|बंद|ब्लॉक)",
+        r"(bijli|light|electricity|बिजली|लाइट).{0,30}(cut|kat|कट|काट)",
+        r"drugs?", r"ड्रग्स", r"money laundering", r"मनी लॉन्ड्रिंग", r"illegal", r"अवैध",
+        r"\bfir\b", r"एफआईआर", r"case (darj|register)", r"केस",
+    ]),
+    "payment": (2, [
+        r"transfer", r"ट्रांसफर", r"\bupi\b", r"यूपीआई", r"paise? (bhejo|bhejiye|daalo)",
+        r"पैसे (भेजो|भेजिए|डालो)", r"fine", r"penalty", r"जुर्माना", r"गोल्ड लोन",
+        r"verification (fee|charge)", r"security deposit", r"gift card", r"refund",
+        r"रिफंड", r"processing fee", r"(safe|secure|rbi) account",
+    ]),
+    "secrecy": (3, [
+        r"(kisi|किसी) ?(ko|को) (mat|मत|na|ना) (batana|batao|बताना|बताओ)",
+        r"don'?t tell anyone", r"(video|वीडियो) (call|कॉल) (pe|par|पे|पर) (raho|rahiye|रहो|रहिए)",
+        r"(call|phone|कॉल|फोन) (mat|मत) (kaatna|kaato|काटना|काटो)",
+        r"do not disconnect", r"stay on the (call|line)", r"(ghar|घर) (walon|वालों) (ko|को)",
+    ]),
+    "urgency": (1, [
+        r"\babhi\b", r"अभी", r"turant", r"तुरंत", r"immediately", r"right now",
+        r"(do|2|two) (ghante|घंटे|hours?)", r"aaj raat", r"आज रात", r"last (warning|chance)",
+    ]),
+    "lure": (2, [
+        r"lottery", r"लॉटरी", r"prize", r"इनाम", r"\bkbc\b", r"cashback", r"कैशबैक",
+        r"work from home", r"part ?time job", r"(double|दोगुना)", r"stock tips?",
+        r"investment (plan|scheme)", r"task (job|based)", r"like (and|&) earn",
+    ]),
+}
+
+# Phrases that are a scam on their own.
+DECISIVE = [r"digital arrest", r"डिजिटल अरेस्ट", r"anydesk", r"any desk", r"teamviewer"]
+
+_compiled = {
+    cat: (w, [re.compile(p, re.I) for p in pats]) for cat, (w, pats) in SIGNALS.items()
+}
+_decisive = [re.compile(p, re.I) for p in DECISIVE]
+
+
+@dataclass
+class Finding:
+    category: str
+    phrase: str
+
+
+@dataclass
+class Verdict:
+    level: str  # scam | suspicious | no_signs
+    score: int
+    findings: list[Finding]
+
+
+def analyse(text: str) -> Verdict:
+    findings: list[Finding] = []
+    score = 0
+    for cat, (weight, patterns) in _compiled.items():
+        for p in patterns:
+            m = p.search(text)
+            if m:
+                findings.append(Finding(cat, m.group(0)))
+                score += weight
+                break  # one hit per category
+
+    cats = {f.category for f in findings}
+    decisive = any(p.search(text) for p in _decisive)
+    if (
+        decisive
+        or score >= 6
+        or ("credential" in cats and len(cats) >= 2)
+        or ({"authority", "payment"} <= cats)
+        or ({"threat", "secrecy"} <= cats)
+    ):
+        level = "scam"
+    elif score >= 2:
+        level = "suspicious"
+    else:
+        level = "no_signs"
+    return Verdict(level, score, findings)
+
+
+RANK = {"no_signs": 0, "suspicious": 1, "scam": 2}
