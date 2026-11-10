@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: haanji-api
+    runtime: python
+    rootDir: api
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GNANI_API_KEY
+        sync: false
+      - key: TWOFACTOR_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        sync: false
+      - key: HAANJI_NUMBER
+        sync: false
+      - key: PHONE_STREAM_SECRET
+        generateValue: true
