@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from ..auth import current_user
 from ..db import Call, Family, User, get_db
 from ..services.languages import CITIES, LANGUAGES, VOICES, is_language
+from ..services.ownership import number_owner, stamp
 
 router = APIRouter(prefix="/api", tags=["me"])
 
@@ -89,6 +90,7 @@ def _me(user: User, db: Session) -> dict:
         "name": user.name,
         "phone": user.phone,
         "onboarded": user.onboarded,
+        "owns_number": user.onboarded and number_owner(db) == user.id,
         "profile": user.profile or {},
         "family": [_family_out(f) for f in fam],
     }
@@ -109,9 +111,22 @@ def update_me(body: ProfileIn, user: User = Depends(current_user), db: Session =
     data = body.model_dump(exclude_none=True)
     if "name" in data:
         user.name = data.pop("name").strip()
+    just_finished = data.get("onboarded") is True and not user.onboarded
     if "onboarded" in data:
         user.onboarded = data.pop("onboarded")
+    if just_finished:
+        data["number_since"] = stamp()  # newest sign-up takes over the shared number
     user.profile = {**(user.profile or {}), **data}  # new dict so SQLAlchemy sees the change
+    db.commit()
+    return _me(user, db)
+
+
+@router.post("/me/number")
+def claim_number(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Make the shared Haanji number answer for this user."""
+    if not user.onboarded:
+        raise HTTPException(400, "Finish setup first")
+    user.profile = {**(user.profile or {}), "number_since": stamp()}
     db.commit()
     return _me(user, db)
 

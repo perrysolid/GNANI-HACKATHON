@@ -23,6 +23,7 @@ from sqlalchemy import select
 from ..config import get_settings
 from ..db import Call, SessionLocal, User
 from ..services.live import RATE, LiveCall
+from ..services.ownership import number_owner
 from .live import MAX_CALL_SECONDS, call_context
 
 router = APIRouter()
@@ -76,9 +77,11 @@ def _authorised(ws: WebSocket, secret_param: str) -> bool:
 
 
 def _resolve_owner(caller: str, owner_param: str) -> int | None:
-    """Whose agent answers: the caller's own account if they call from their registered number
-    (so every user, judges included, reaches their own Haanji), else the configured owner."""
-    return _owner_id(caller) or _owner_id(owner_param or get_settings().phone_owner)
+    """The shared number answers for whoever signed up (or claimed it) most recently;
+    PHONE_OWNER only if nobody has finished setup yet."""
+    with SessionLocal() as db:
+        uid = number_owner(db)
+    return uid or _owner_id(owner_param or get_settings().phone_owner)
 
 
 def _owner_id(phone: str) -> int | None:

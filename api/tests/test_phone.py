@@ -27,19 +27,19 @@ def test_stream_rejects_unknown_owner():
             ws.receive_text()
 
 
-def test_caller_reaches_their_own_agent(monkeypatch):
+def test_number_answers_for_latest_signup():
     from fastapi.testclient import TestClient
-    from app.config import get_settings
     from app.main import app
     from app.routes.phone import _resolve_owner
     from tests.test_api import _login
     with TestClient(app) as c:
+        ids = {}
         for phone in ("9811100001", "9811100002"):
             h = {"Authorization": f"Bearer {_login(c, phone=phone)}"}
-            c.patch("/api/me", headers=h, json={"onboarded": True})
-        judge = c.get("/api/me", headers={"Authorization": f"Bearer {_login(c, phone='9811100002')}"}).json()["id"]
-        owner = c.get("/api/me", headers={"Authorization": f"Bearer {_login(c, phone='9811100001')}"}).json()["id"]
-    monkeypatch.setattr(get_settings(), "phone_owner", "9811100001")
-    assert _resolve_owner("09811100002", "") == judge          # registered caller -> their own agent
-    assert _resolve_owner("+919811100002", "") == judge
-    assert _resolve_owner("09000000000", "") == owner          # stranger -> the configured owner
+            ids[phone] = c.patch("/api/me", headers=h, json={"onboarded": True}).json()
+        assert ids["9811100002"]["owns_number"] and not c.get(
+            "/api/me", headers={"Authorization": f"Bearer {_login(c, phone='9811100001')}"}).json()["owns_number"]
+        assert _resolve_owner("09000000000", "") == ids["9811100002"]["id"]   # newest sign-up answers
+        h1 = {"Authorization": f"Bearer {_login(c, phone='9811100001')}"}
+        assert c.post("/api/me/number", headers=h1).json()["owns_number"]     # claim it back
+        assert _resolve_owner("09811100002", "") == ids["9811100001"]["id"]
