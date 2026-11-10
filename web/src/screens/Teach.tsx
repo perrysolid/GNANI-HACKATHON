@@ -3,15 +3,14 @@ import { Briefcase, Car, Check, Clock, LocateFixed, MapPin, NotebookPen, Package
 import { clsx } from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { api, type Address, type Knowledge, type Profession, type Profile } from '../lib/api'
+import { api, type Address, type Knowledge, type LiveLocation, type Profession, type Profile } from '../lib/api'
 import { useApp } from '../lib/store'
-import { useLive } from '../lib/location'
 import { Backdrop, BackButton, ErrorText, Spinner, Toggle } from '../components/ui'
 
 /* ---------- what can be taught ------------------------------------------------ */
 
 export const TYPES = [
-  { id: 'places', label: 'Places', icon: MapPin, subs: [['home', 'Home'], ['work', 'Work'], ['now', 'Live'], ['other', 'Other']] },
+  { id: 'places', label: 'Places', icon: MapPin, subs: [['home', 'Home'], ['work', 'Work'], ['now', 'Current'], ['other', 'Other']] },
   { id: 'business', label: 'Business', icon: Briefcase, subs: [] },
   { id: 'delivery', label: 'Deliveries', icon: Package, subs: [['food', 'Food'], ['grocery', 'Groceries'], ['parcel', 'Parcels']] },
   { id: 'rides', label: 'Rides', icon: Car, subs: [] },
@@ -35,7 +34,7 @@ export function summary(t: TypeId, p: Profile): string {
   const label = (list: string[][], v?: string) => list.find(([id]) => id === v)?.[1] ?? ''
   switch (t) {
     case 'places': {
-      const n = [p.address?.house && 'Home', k.places?.work?.address && 'Work', (p.live?.at || k.places?.now?.address) && 'Live', k.places?.other?.address && (k.places.other.name || 'Other')].filter(Boolean)
+      const n = [p.address?.house && 'Home', k.places?.work?.address && 'Work', (p.live?.at || k.places?.now?.address) && 'Current location', k.places?.other?.address && (k.places.other.name || 'Other')].filter(Boolean)
       return n.join(' · ')
     }
     case 'delivery': {
@@ -271,35 +270,44 @@ function Chips({ label, options, value, onChange }: { label: string; options: st
   )
 }
 
-/** Live location: on = the phone keeps Haanji updated by itself; callers are guided by nearby landmarks. */
+/** Current location: one tap takes a GPS fix; orders and rides are guided there by nearby landmarks. */
 function RightNow({ value, onChange }: { value?: { label?: string; address?: string; at?: string }; onChange: (v: { label?: string; address?: string; at?: string }) => void }) {
-  const { on, last, error, start, stop } = useLive()
   const me = useApp((s) => s.me)
-  const live = last ?? me?.profile.live
-  const ago = live?.at ? Math.max(0, Math.round((Date.now() - new Date(live.at).getTime()) / 60000)) : null
+  const [loc, setLoc] = useState<LiveLocation | null>(me?.profile.live ?? null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const time = loc?.at ? new Date(loc.at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''
+
+  const take = () => {
+    if (!navigator.geolocation) { setErr('This browser can’t share location.'); return }
+    setBusy(true); setErr('')
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try { setLoc(await api.shareLocation(coords.latitude, coords.longitude, coords.accuracy)) }
+        catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+      },
+      (e) => { setBusy(false); setErr(e.code === e.PERMISSION_DENIED ? 'Location is blocked. Allow it for this site in your browser settings.' : 'Can’t get your location right now. Try again outside or near a window.') },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
+    )
+  }
+  const clear = async () => { setLoc(null); await api.stopLocation().catch(() => {}) }
 
   return (
     <>
       <div className="overflow-hidden rounded-3xl bg-ink text-white">
         <div className="flex items-center gap-4 p-5">
-          <span className="relative grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent text-ink">
-            <LocateFixed className="h-5 w-5" />
-            {on && <motion.span className="absolute inset-0 rounded-xl border-2 border-accent" animate={{ scale: [1, 1.5], opacity: [0.8, 0] }} transition={{ duration: 1.6, repeat: Infinity }} />}
-          </span>
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent text-ink"><LocateFixed className="h-5 w-5" /></span>
           <div className="flex-1">
-            <p className="text-[16px] font-semibold">Share live location</p>
-            <p className="text-[13px] text-white/60">{on ? (ago === null ? 'Finding you…' : ago < 1 ? 'Updated just now' : `Updated ${ago} min ago`) : 'Haanji guides callers to wherever you are'}</p>
+            <p className="text-[16px] font-semibold">{loc ? 'Your current location' : 'Use my current location'}</p>
+            <p className="text-[13px] text-white/60">{loc ? `Shared at ${time}. Orders and rides come here.` : 'For an order or a ride to where you are now'}</p>
           </div>
-          <button onClick={() => (on ? stop() : start())} aria-label="Share live location" className={clsx('relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors', on ? 'bg-accent' : 'bg-white/20')}>
-            <motion.span layout transition={{ type: 'spring', stiffness: 500, damping: 32 }} className={clsx('absolute top-[3px] h-6 w-6 rounded-full shadow', on ? 'right-[3px] bg-ink' : 'left-[3px] bg-white')} />
-          </button>
         </div>
-        {on && live?.place && (
+        {loc?.place && (
           <div className="border-t border-white/10 px-5 py-4">
-            <p className="text-[15px] font-medium">{live.place}</p>
-            {live.near.length > 0 && (
+            <p className="text-[15px] font-medium">{loc.place}</p>
+            {loc.near.length > 0 && (
               <ul className="mt-3 space-y-1.5">
-                {live.near.slice(0, 4).map((l) => (
+                {loc.near.slice(0, 4).map((l) => (
                   <li key={l.name} className="flex items-baseline gap-2 text-[13px] text-white/70">
                     <span className="h-1.5 w-1.5 shrink-0 translate-y-[-2px] rounded-[2px] bg-accent" />
                     <span className="flex-1 truncate">{l.name}</span>
@@ -310,15 +318,21 @@ function RightNow({ value, onChange }: { value?: { label?: string; address?: str
             )}
           </div>
         )}
+        <div className="flex gap-2 px-5 pb-5">
+          <motion.button whileTap={{ scale: 0.97 }} onClick={take} disabled={busy} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-accent text-[15px] font-semibold text-ink disabled:opacity-60">
+            {busy ? <Spinner /> : loc ? 'Update location' : 'Use my current location'}
+          </motion.button>
+          {loc && <button onClick={clear} className="h-12 rounded-2xl bg-white/10 px-4 text-[15px] font-semibold">Remove</button>}
+        </div>
       </div>
-      {error && <ErrorText>{error}</ErrorText>}
-      {on && <p className="text-[13px] leading-relaxed text-muted">Updates while Haanji is open on your phone. Add it to your home screen and keep it open when someone is on the way.</p>}
+      {err && <ErrorText>{err}</ErrorText>}
+      {loc && <p className="text-[13px] leading-relaxed text-muted">Haanji uses it for 12 hours, then goes back to your home address.</p>}
 
       <label className="block">
         <span className="mb-1.5 block text-[14px] font-medium text-muted">Extra instructions (optional)</span>
         <input className="field" maxLength={300} value={value?.label ?? ''} placeholder="Upstairs, table by the window" onChange={(e) => onChange({ ...value, label: e.target.value })} />
       </label>
-      {!on && (
+      {!loc && (
         <label className="block">
           <span className="mb-1.5 block text-[14px] font-medium text-muted">Or type where you are</span>
           <input className="field" maxLength={300} value={value?.address ?? ''} placeholder="Third Wave Coffee, 12th Main, Indiranagar"

@@ -83,9 +83,9 @@ def test_live_location_feeds_call_facts(monkeypatch):
         assert r.status_code == 200 and r.json()["near"][0]["name"] == "Gayatri Temple"
         profile = c.get("/api/me", headers=h).json()["profile"]
         text = facts(profile)
-        assert "LIVE LOCATION" in text and "Gayatri Temple" in text and "30 m east" in text
+        assert "CURRENT LOCATION" in text and "Gayatri Temple" in text and "30 m east" in text
         assert c.delete("/api/me/location", headers=h).status_code == 200
-        assert "LIVE LOCATION" not in facts(c.get("/api/me", headers=h).json()["profile"])
+        assert "CURRENT LOCATION" not in facts(c.get("/api/me", headers=h).json()["profile"])
 
 
 def test_profession_answers_reach_the_call():
@@ -98,3 +98,22 @@ def test_profession_answers_reach_the_call():
     with TestClient(app) as c:
         profs = c.get("/api/catalog").json()["professions"]
         assert any(p["id"] == "clinic" and p["questions"] for p in profs)
+
+
+def test_demo_sign_in_uses_the_number_but_not_for_sms_verified_accounts():
+    with TestClient(app) as c:
+        r = c.post("/api/auth/demo", json={"phone": "9876500011", "name": "Judge"})
+        assert r.status_code == 200 and r.json()["name"] == "Judge"
+        h = {"Authorization": f"Bearer {r.json()['token']}"}
+        assert c.get("/api/me", headers=h).json()["phone"] == "9876500011"
+        _login(c, phone="9876500012")  # verified by SMS code
+        assert c.post("/api/auth/demo", json={"phone": "9876500012"}).status_code == 403
+
+
+def test_scam_guard_is_on_only_for_family_setups():
+    with TestClient(app) as c:
+        for phone, purposes, want in (("9876500021", ["family"], True), ("9876500022", ["general"], False)):
+            h = {"Authorization": f"Bearer {c.post('/api/auth/demo', json={'phone': phone}).json()['token']}"}
+            me = c.patch("/api/me", headers=h, json={"purposes": purposes, "onboarded": True}).json()
+            assert me["profile"]["scam_guard"] is want
+            assert c.patch("/api/me", headers=h, json={"scam_guard": not want}).json()["profile"]["scam_guard"] is (not want)

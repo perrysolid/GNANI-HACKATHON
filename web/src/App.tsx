@@ -1,7 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useApp } from './lib/store'
-import { useLive } from './lib/location'
 import { Spinner } from './components/ui'
 import { Welcome } from './screens/Welcome'
 import { Onboarding } from './screens/Onboarding'
@@ -24,10 +23,8 @@ function Gate({ children, need }: { children: ReactNode; need: 'guest' | 'user' 
 }
 
 export default function App() {
-  const { loading, load, me } = useApp()
+  const { loading, load } = useApp()
   useEffect(() => { load() }, [load])
-  // Resume live location sharing whenever a signed-in user opens the app.
-  useEffect(() => { if (me?.onboarded && useLive.getState().on) useLive.getState().start() }, [me?.onboarded])
 
   if (loading) {
     return <div className="app items-center justify-center"><Spinner className="text-muted" /></div>

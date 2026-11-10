@@ -8,7 +8,7 @@ Shape (every leaf is a short string or bool; unknown keys are dropped):
   notes:    {say, never}
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 # Receptionist questions per line of work. The app renders these; calls answer from them.
 PROFESSIONS: dict[str, dict] = {
@@ -117,12 +117,13 @@ def facts(profile: dict, now: datetime | None = None) -> str:
             lines.append(f"{label}{name}: {p['address']}{extra}.")
     live = profile.get("live") or {}
     if live.get("at"):
-        age = ((now or datetime.now(timezone.utc)) - datetime.fromisoformat(live["at"])).total_seconds() / 60
-        if age <= 30:
-            when = "just now" if age < 2 else f"{round(age)} minutes ago"
-            line = f"LIVE LOCATION (from their phone, updated {when}): {live.get('place') or 'unknown street'}."
+        at = datetime.fromisoformat(live["at"])
+        hours = ((now or datetime.now(timezone.utc)) - at).total_seconds() / 3600
+        if hours <= 12:
+            ist = at.astimezone(timezone(timedelta(hours=5, minutes=30))).strftime("%-I:%M %p").lower()
+            line = f"CURRENT LOCATION (shared from their phone at {ist}): {live.get('place') or 'unknown street'}."
             if live.get("near"):
-                line += " Landmarks around them: " + "; ".join(
+                line += " Landmarks around it: " + "; ".join(
                     f"{p['name']} ({p['kind']}) {p['m']} m {p['dir']}" for p in live["near"]) + "."
             lines.append(line)
     n = places.get("now") or {}

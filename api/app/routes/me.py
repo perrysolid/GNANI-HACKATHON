@@ -27,6 +27,7 @@ class ProfileIn(BaseModel):
     address: Address | None = None
     voice: str | None = None
     knowledge: dict | None = None  # what Haanji may tell callers; see services/knowledge.py
+    scam_guard: bool | None = None  # screen calls for scams and cut them (for grandparents)
     onboarded: bool | None = None
 
     @field_validator("knowledge")
@@ -119,6 +120,9 @@ def update_me(body: ProfileIn, user: User = Depends(current_user), db: Session =
         user.onboarded = data.pop("onboarded")
     if just_finished:
         data["number_since"] = stamp()  # newest sign-up takes over the shared number
+        purposes = data.get("purposes") or (user.profile or {}).get("purposes") or []
+        if "scam_guard" not in data and "scam_guard" not in (user.profile or {}):
+            data["scam_guard"] = "family" in purposes
     user.profile = {**(user.profile or {}), **data}  # new dict so SQLAlchemy sees the change
     db.commit()
     return _me(user, db)
@@ -132,7 +136,7 @@ class LocationIn(BaseModel):
 
 @router.post("/me/location")
 async def share_location(body: LocationIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Live location from the phone. Landmarks are looked up again only after moving ~40 m."""
+    """Current location from the phone (one tap). Landmarks are looked up again only after moving ~40 m."""
     from datetime import datetime, timezone
     from ..services.places import describe, distance_m
     live = dict((user.profile or {}).get("live") or {})
