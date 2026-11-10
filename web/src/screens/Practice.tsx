@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { LiveCall, type LiveEvent } from '../lib/live'
 import { langName, langNative } from '../lib/data'
 import { useApp } from '../lib/store'
-import { Backdrop, Orb, Spinner } from '../components/ui'
+import { Backdrop, Signal, Spinner } from '../components/ui'
 import { who } from './steps/Family'
 
 type Line = { id: number; who: 'caller' | 'haanji'; text: string; lang: string; cut?: boolean }
@@ -120,7 +120,7 @@ export function Practice() {
       : thinking ? 'Thinking…'
       : 'Your turn: just talk'
 
-  const target = persona === 'screen' ? (me?.family[0] ? who(me.family[0]) : 'your parent') : me?.name.split(' ')[0]
+  const target = persona === 'screen' ? (me?.family[0] ? who(me.family[0]) : 'your parent') : me?.name.split(' ')[0].replace(/^./, (c) => c.toUpperCase())
 
   return (
     <div className="app text-white" style={{ background: '#0F0F10' }}>
@@ -136,9 +136,7 @@ export function Practice() {
       </header>
 
       <section className="flex flex-col items-center px-6 pt-2 text-center">
-        <div className="relative h-48 w-48">
-          <Orb className="absolute inset-0" color={scam ? '#D63031' : '#C8F24A'} active={speaking || thinking} />
-        </div>
+        <Signal className="my-4 w-40" color={scam ? 'rgb(var(--alarm))' : undefined} active={speaking || thinking} level={speaking ? 0.4 : 0} />
         <p className="font-display text-[26px] font-bold">Haanji</p>
         <p className="text-[14px] text-white/50">
           {phase === 'idle' ? `Answering for ${target ?? 'you'}` : lang ? `${status} · ${langNative(lang)}` : status}

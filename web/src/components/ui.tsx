@@ -1,10 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, Check, CircleAlert, Loader2, Mic, Pause, Play, Square } from 'lucide-react'
 import { clsx } from 'clsx'
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Recorder } from '../lib/recorder'
-
-export const LazyStatusOrb = lazy(() => import('../three/VoiceOrb').then((m) => ({ default: m.StatusOrb })))
 
 /** Faded square grid behind a screen. Deterministic, so it doesn't reshuffle on re-render. */
 export function Backdrop({ dark }: { dark?: boolean }) {
@@ -13,7 +11,7 @@ export function Backdrop({ dark }: { dark?: boolean }) {
   const filled: { x: number; y: number; o: number; d: number }[] = []
   for (let i = 0; i < cols * rows; i++) {
     const h = (i * 2654435761) % 997
-    if (h % 23 === 0) filled.push({ x: i % cols, y: Math.floor(i / cols), o: 0.05 + (h % 7) / 100, d: (h % 50) / 10 })
+    if (h % 23 === 0) filled.push({ x: i % cols, y: Math.floor(i / cols), o: 0.025 + (h % 5) / 200, d: (h % 50) / 10 })
   }
   return (
     <svg className="backdrop" width="100%" aria-hidden preserveAspectRatio="xMidYMin slice" viewBox={`0 0 ${cols * size} ${rows * size}`}>
@@ -31,12 +29,26 @@ export function Backdrop({ dark }: { dark?: boolean }) {
   )
 }
 
-export function Orb(props: { color?: string; active?: boolean; className?: string }) {
+/**
+ * Haanji's voice mark: nested squares that echo the grid backdrop. Rings breathe while a call
+ * is live and swell with the voice level; the core bars move while Haanji speaks.
+ */
+export function Signal({ active, level = 0, color = 'rgb(var(--accent))', className }: { active?: boolean; level?: number; color?: string; className?: string }) {
   return (
-    <div className={props.className}>
-      <Suspense fallback={null}>
-        <LazyStatusOrb color={props.color} active={props.active} />
-      </Suspense>
+    <div className={clsx('relative grid aspect-square place-items-center', className)}>
+      {[0, 1, 2].map((i) => (
+        <motion.span key={i} className="absolute rounded-[30%] border-[1.5px]"
+          style={{ inset: `${i * 13}%`, borderColor: color, opacity: 0.14 + i * 0.14 }}
+          animate={active ? { scale: [1, 1.04 + level * 0.25, 1] } : { scale: 1 }}
+          transition={active ? { duration: 1.8, repeat: Infinity, delay: (2 - i) * 0.22, ease: 'easeInOut' } : { duration: 0.4 }} />
+      ))}
+      <span className="relative flex aspect-square w-[38%] items-center justify-center gap-[7%] rounded-[30%]" style={{ background: color }}>
+        {[0.45, 0.8, 0.6, 0.35].map((h, i) => (
+          <motion.span key={i} className="w-[9%] rounded-full bg-ink"
+            animate={{ height: active ? [`${h * 22}%`, `${h * 62}%`, `${h * 22}%`] : `${h * 30}%` }}
+            transition={active ? { duration: 0.7 + i * 0.13, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }} />
+        ))}
+      </span>
     </div>
   )
 }
