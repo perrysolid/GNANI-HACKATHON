@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: 17 17 17;
+  --paper: 247 245 240;
+  --card: 255 255 255;
+  --line: 230 226 217;
+  --muted: 118 114 106;
+  --accent: 200 242 74; /* lime: fills and dark surfaces only, never text on paper */
+  --warn: 178 121 12;
+  --leaf: 18 140 94;
+  --alarm: 214 48 49;
+  color-scheme: light;
+}
+
+html,
+body {
+  background: rgb(var(--paper));
+  color: rgb(var(--ink));
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: Geist, system-ui, 'Noto Sans', sans-serif;
+}
+
+@layer components {
+  .app {
+    @apply relative isolate mx-auto flex min-h-[100dvh] w-full max-w-[440px] flex-col bg-paper;
+    padding-top: env(safe-area-inset-top);
+  }
+  .bottom-safe {
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+  .btn {
+    @apply flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-ink text-[16px] font-semibold text-white transition active:scale-[0.98] disabled:opacity-25;
+  }
+  .btn-ghost {
+    @apply flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[15px] font-medium text-ink/70 active:bg-ink/5;
+  }
+  .field {
+    @apply w-full rounded-2xl border border-line bg-card px-4 py-4 text-[17px] font-medium outline-none transition placeholder:text-ink/25 focus:border-ink;
+  }
+  .tag {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted;
+  }
+  .title {
+    @apply font-display text-[34px] font-bold leading-[1.05] tracking-[-0.03em];
+  }
+  .card {
+    @apply rounded-3xl border border-line bg-card;
+  }
+}
+
+/* Square grid that fades out from the top. Cells are 24px; a few are filled. */
+.backdrop {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: min(70dvh, 620px);
+  z-index: -1;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.55) 45%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.55) 45%, transparent 100%);
+}
+.backdrop .cell {
+  animation: cell 6s ease-in-out infinite;
+}
+@keyframes cell {
+  0%, 100% { opacity: var(--o); }
+  50% { opacity: calc(var(--o) * 0.25); }
+}
+
+@media (min-width: 480px) {
+  body {
+    background: #e9e6df;
+  }
+  .app {
+    box-shadow: 0 0 0 1px rgb(var(--line)), 0 30px 80px -30px rgba(0, 0, 0, 0.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
