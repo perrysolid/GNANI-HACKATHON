@@ -7,8 +7,8 @@ def _login(c: TestClient, phone="9876543210", name="Parth") -> str:
     r = c.post("/api/auth/send", json={"phone": phone})
     assert r.status_code == 200, r.text
     sid = r.json()["session_id"]
-    assert r.json()["dev_code"] == "1234"
-    r = c.post("/api/auth/verify", json={"session_id": sid, "code": "1234", "name": name})
+    assert r.json()["dev_code"] == "123456"
+    r = c.post("/api/auth/verify", json={"session_id": sid, "code": "123456", "name": name})
     assert r.status_code == 200, r.text
     return r.json()["token"]
 

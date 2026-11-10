@@ -1,7 +1,7 @@
 """2Factor.in OTP over SMS or a voice call.
 
 Without TWOFACTOR_API_KEY (development only) a dev session is issued and the
-code is always 1234.
+code is always 123456.
 """
 
 import logging
@@ -13,7 +13,7 @@ from ..config import get_settings
 
 log = logging.getLogger("haanji.otp")
 _BASE = "https://2factor.in/API/V1"
-DEV_CODE = "1234"
+DEV_CODE = "123456"
 
 
 class OtpError(Exception):

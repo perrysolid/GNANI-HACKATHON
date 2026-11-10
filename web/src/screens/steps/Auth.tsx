@@ -6,7 +6,7 @@ import { useApp } from '../../lib/store'
 import { ErrorText, Spinner } from '../../components/ui'
 import { StepFrame, type StepProps } from '../Onboarding'
 
-const CODE_LENGTH = 4
+const CODE_LENGTH = 6
 
 // Shared between the phone and OTP steps.
 const otpState = { sessionId: '', devCode: '' as string | null }
@@ -68,7 +68,7 @@ export function PhoneStep({ draft, update, next, onSignedIn }: StepProps & { onS
     <StepFrame
       tag="Phone number"
       title={'What’s your\nnumber?'}
-      sub={demoLogin ? 'Use your real number. Haanji recognises you when you call from it.' : 'We’ll text you a 4-digit code.'}
+      sub={demoLogin ? 'Use your real number. Haanji recognises you when you call from it.' : 'We’ll text you a 6-digit code.'}
       footer={
         <div className="space-y-2.5">
           <button className="btn" disabled={!ok || !!busy} onClick={send}>{busy === 'sms' ? <Spinner /> : 'Send code'}</button>
@@ -160,7 +160,7 @@ export function OtpStep({ draft, update, onSignedIn }: StepProps & { onSignedIn:
         </button>
       }
     >
-      <motion.label key={shake} animate={shake ? { x: [0, -10, 10, -6, 6, 0] } : {}} transition={{ duration: 0.4 }} className="relative flex gap-3" onClick={() => input.current?.focus()}>
+      <motion.label key={shake} animate={shake ? { x: [0, -10, 10, -6, 6, 0] } : {}} transition={{ duration: 0.4 }} className="relative flex gap-2" onClick={() => input.current?.focus()}>
         {Array.from({ length: CODE_LENGTH }).map((_, i) => {
           const filled = i < code.length
           const active = i === code.length && !busy
@@ -169,7 +169,7 @@ export function OtpStep({ draft, update, onSignedIn }: StepProps & { onSignedIn:
               key={i}
               animate={{ scale: filled ? [1, 1.08, 1] : 1 }}
               transition={{ duration: 0.18 }}
-              className={clsx('grid h-[68px] flex-1 place-items-center rounded-2xl border bg-card font-display text-[30px] font-bold transition-colors', active ? 'border-ink' : filled ? 'border-ink/30' : 'border-line')}
+              className={clsx('grid h-[60px] min-w-0 flex-1 place-items-center rounded-xl border bg-card font-display text-[26px] font-bold transition-colors', active ? 'border-ink' : filled ? 'border-ink/30' : 'border-line')}
             >
               {code[i] ?? (active ? <span className="h-6 w-[2px] animate-pulse bg-ink" /> : '')}
             </motion.div>
