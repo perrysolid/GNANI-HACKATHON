@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { ChevronRight, Headphones, Phone, ShieldAlert, Volume2 } from 'lucide-react'
+import { ChevronRight, Headphones, ShieldAlert, Volume2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
@@ -66,14 +66,14 @@ export function HomeTab() {
           </p>
           <p className="mt-2 text-[14px] text-white/60">
             {!haanjiNumber ? 'Your setup is saved. Try a call in the browser meanwhile.'
-              : me.owns_number ? 'Anyone who calls this number reaches your Haanji.'
+              : me.owns_number ? 'This number is assigned to you. Use another phone to call it.'
               : 'This number is answering for someone else right now.'}
           </p>
         </div>
         {haanjiNumber && (me.owns_number ? (
-          <a href={`tel:${haanjiNumber}`} className="relative mt-5 flex h-12 items-center justify-center gap-2 rounded-2xl bg-accent text-[15px] font-semibold text-ink active:scale-[0.98] transition">
-            <Phone className="h-[18px] w-[18px]" fill="currentColor" /> Call {number}
-          </a>
+          <p className="relative mt-5 flex h-12 items-center justify-center rounded-2xl bg-accent font-display text-[20px] font-bold tracking-wide text-ink">
+            {number}
+          </p>
         ) : (
           <button onClick={claim} disabled={claiming} className="relative mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white text-[15px] font-semibold text-ink active:scale-[0.98] transition disabled:opacity-60">
             {claiming ? <Spinner /> : <>Answer {number} for me</>}
