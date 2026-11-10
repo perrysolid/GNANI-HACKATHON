@@ -57,6 +57,8 @@ export type Knowledge = {
   business?: { kind?: string; name?: string; answers?: Record<string, string> }
 }
 export type Landmark = { name: string; kind: string; m: number; dir: string }
+export type Errand = { id: number; to_phone: string; to_name: string; task: string; status: 'dialing' | 'on_call' | 'done' | 'failed' | 'no_answer'; result: string; transcript: { who: 'caller' | 'haanji'; text: string }[] }
+export type PastErrand = { id: number; to: string; result: string; at: string }
 export type LiveLocation = { place: string; near: Landmark[]; at: string }
 export type Profile = {
   purposes?: ('general' | 'away' | 'family')[]
@@ -97,6 +99,10 @@ export const api = {
   me: () => request<Me>('/api/me'),
   shareLocation: (lat: number, lng: number, accuracy: number, label = '') =>
     request<LiveLocation>('/api/me/location', json('POST', { lat, lng, accuracy, label })),
+  startErrand: (b: { to_phone: string; to_name: string; task: string; language: string; share_number: boolean }) =>
+    request<Errand>('/api/errands', json('POST', b)),
+  errands: () => request<{ active: Errand[]; past: PastErrand[] }>('/api/errands'),
+  errand: (id: number) => request<Errand>(`/api/errands/${id}`),
   stopLocation: () => request<{ ok: true }>('/api/me/location', json('DELETE')),
   claimNumber: () => request<Me>('/api/me/number', json('POST')),
   updateMe: (patch: Partial<Profile> & { name?: string; onboarded?: boolean }) => request<Me>('/api/me', json('PATCH', patch)),

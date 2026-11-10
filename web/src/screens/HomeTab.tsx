@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Captions, Check, ChevronRight, Copy, Ear, Headphones, ShieldAlert, Volume2 } from 'lucide-react'
+import { Captions, Check, ChevronRight, Copy, PhoneOutgoing, Ear, Headphones, ShieldAlert, Volume2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
@@ -97,7 +97,18 @@ export function HomeTab() {
         )}
       </motion.section>
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
+      <motion.div {...item(2)}>
+        <Link to="/errands" className="card mt-4 flex items-center gap-4 p-4 active:scale-[0.98] transition">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent text-ink"><PhoneOutgoing className="h-[22px] w-[22px]" /></span>
+          <div className="flex-1">
+            <p className="text-[16px] font-semibold leading-snug">Haanji calls for you</p>
+            <p className="text-[13px] text-muted">Book a table, an appointment, ask if they’re open</p>
+          </div>
+          <ChevronRight className="h-[18px] w-[18px] text-ink/30" />
+        </Link>
+      </motion.div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3">
         <motion.div {...item(2)}>
           <Link to="/practice?as=rider" className="card flex h-full flex-col p-4 active:scale-[0.98] transition">
             <span className="grid h-11 w-11 place-items-center rounded-xl bg-ink text-accent"><Headphones className="h-[22px] w-[22px]" /></span>

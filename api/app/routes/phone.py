@@ -24,7 +24,7 @@ from ..config import get_settings
 from ..db import Call, SessionLocal, User
 from ..services.live import RATE, LiveCall
 from ..services.ownership import number_owner
-from ..services import hub
+from ..services import errands, hub
 from .live import MAX_CALL_SECONDS, call_context
 
 router = APIRouter()
@@ -123,14 +123,18 @@ async def exotel(ws: WebSocket):
     caller = str(start.get("from", ""))
     rate = int((start.get("media_format") or {}).get("sample_rate") or 8000)
     persona = "screen" if params.get("persona") == "screen" else "rider"
-    uid = _resolve_owner(caller, str(params.get("owner") or ""))
+    # An outgoing call Haanji placed for someone ("book a table") runs the same flow.
+    errand = errands.claim(caller, str(start.get("to", "")))
+    if errand:
+        persona = "errand"
+    uid = errand.uid if errand else _resolve_owner(caller, str(params.get("owner") or ""))
     ctx = call_context(uid, persona) if uid else None
     if not ctx or not get_settings().gnani_api_key:
         log.warning("exotel stream: no signed-up user for owner=%r (PHONE_OWNER=%r)",
                     params.get("owner"), get_settings().phone_owner)
         await ws.close(code=1008)
         return
-    await bridge(ws, Wire("exotel", sid, rate), uid, persona, ctx, caller)
+    await bridge(ws, Wire("exotel", sid, rate), uid, persona, ctx, caller, errand)
 
 
 class Wire:
@@ -157,7 +161,7 @@ class Wire:
         return upsample_2x(raw) if self.rate == 8000 else raw
 
 
-async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller: str) -> None:
+async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller: str, errand=None) -> None:
     owner, profile, protected = ctx
     log.info("%s call %s from %s, persona=%s", wire.kind, wire.sid, caller, persona)
 
@@ -226,7 +230,9 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
         await push(chunks)
 
     call = LiveCall(persona=persona, owner_name=owner, profile=profile, protected=protected,
-                    send_json=on_event, send_audio=on_audio)
+                    send_json=on_event, send_audio=on_audio, errand=errand)
+    if errand:
+        errand.transcript = call.transcript  # live view in the app
 
     async def pump():
         try:
@@ -270,8 +276,12 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
     await asyncio.gather(runner, pumper, return_exceptions=True)
 
     summary = await call.summary(profile.get("my_language") or "en-IN")
+    if errand:
+        errand.status, errand.result = "done", summary or "The call ended before anything was agreed."
+        caller = f"{errand.to_name[:9]} {errand.to_phone}".strip()  # column is 20 chars
     with SessionLocal() as db:
-        db.add(Call(user_id=uid, direction="in", kind=f"phone-{persona}", counterpart=caller or "Unknown number",
+        db.add(Call(user_id=uid, direction="out" if errand else "in", kind="errand" if errand else f"phone-{persona}",
+                    counterpart=caller or "Unknown number",
                     language=call.caller_lang, verdict="scam" if call.verdict == "scam" else "ok",
                     summary=summary or "", transcript=call.transcript))
         db.commit()

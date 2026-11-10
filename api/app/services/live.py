@@ -70,14 +70,17 @@ class LiveCall:
     def __init__(
         self,
         *,
-        persona: str,  # rider | screen
+        persona: str,  # rider | screen | errand
         owner_name: str,
         profile: dict,
         protected: dict | None,
         send_json: Callable[[dict], Awaitable[None]],
         send_audio: Callable[[bytes], Awaitable[None]],
+        errand=None,  # services.errands.Errand: an outgoing call Haanji makes for the owner
     ):
         self.persona = persona
+        self.errand = errand
+        self.end_after = False  # the model said [END]: hang up after this reply
         self.owner = owner_name or "Customer"
         self.profile = profile
         self.protected = protected or {}
@@ -90,6 +93,8 @@ class LiveCall:
         self.voice = profile.get("voice") or "Shivani"
         self.history: list[dict] = []
         self.transcript: list[dict] = []
+        if errand is not None:
+            self.home_lang = errand.language
         self.caller_lang = self.home_lang
         self.turn = 0
         self.reply_task: asyncio.Task | None = None
@@ -100,7 +105,7 @@ class LiveCall:
         # Typing mode (deaf users): the owner types, Haanji only speaks what they type.
         self.manual = False
         # Scam guard: only when the owner turned it on (or in the scam practice call).
-        self.guard = persona == "screen" or bool(profile.get("scam_guard"))
+        self.guard = persona == "screen" or (persona != "errand" and bool(profile.get("scam_guard")))
         # Owner joined the call ("on the call with me"): Haanji steps back while they talk.
         self.owner_spoke_at = 0.0
         # Caller said where they are: the route from there, found on the map (one at a time).
@@ -134,6 +139,20 @@ class LiveCall:
             f"markdown, no emojis. Write numbers as words. If the caller switches language, follow them. "
             f"Never share OTPs, bank details, Aadhaar, or anything not given to you here."
         )
+        if self.persona == "errand" and self.errand is not None:
+            e = self.errand
+            contact = (f" If they need a contact number for {self.owner}, give {' '.join(e.owner_phone)}."
+                       if e.share_number and e.owner_phone else f" Don't give out {self.owner}'s phone number.")
+            return (
+                f"{common} This is an OUTGOING call: you called {e.to_name or 'this business'} on behalf of "
+                f"{self.owner}. YOUR TASK: {e.task}\nOpen by greeting, saying you are Haanji calling for "
+                f"{self.owner}, and asking for it in one sentence. Answer their questions only from the task. "
+                f"If they offer something different (another time, another table), accept only if the task "
+                f"allows it; otherwise say {self.owner} will call back. Before finishing, repeat the agreed "
+                f"details back (name, day, time, number of people, anything else).{contact} Never agree to "
+                f"pay or share card numbers or OTPs. Talk like a person making the call: never mention 'the task', instructions or limits. When the task is done, or clearly not possible, thank them, "
+                f"say goodbye and end that reply with [END]."
+            )
         if self.persona == "screen":
             return (
                 f"{common} You answer calls from unknown numbers for {self.speaking_for}, an elderly "
@@ -238,13 +257,23 @@ class LiveCall:
         async with connect("wss://api.vachana.ai/stt/v3/stream", additional_headers=headers, max_size=2**20) as stt:
             self._stt = stt
             await self.send_json({"type": "ready", "language": self.home_lang, "speaking_for": self.speaking_for})
-            greeting = GREETING[self.home_lang].format(name=self.speaking_for)
-            self._start_reply(fixed=greeting)
+            if self.errand is not None:
+                asyncio.create_task(self._open_errand())
+            else:
+                greeting = GREETING[self.home_lang].format(name=self.speaking_for)
+                self._start_reply(fixed=greeting)
             reader = asyncio.create_task(self._read_stt(stt))
             await self.ended.wait()
             reader.cancel()
             await self.interrupt()
             await asyncio.gather(reader, return_exceptions=True)
+
+    async def _open_errand(self) -> None:
+        """Outgoing call: they usually say hello first; if they don't within 3 s, Haanji starts."""
+        await asyncio.sleep(3)
+        if not self.history and not self.ended.is_set():
+            self.history.append({"role": "user", "content": "(They picked up but haven't said anything yet.)"})
+            self._start_reply()
 
     async def _read_stt(self, stt) -> None:
         try:
@@ -342,15 +371,22 @@ class LiveCall:
                     continue
                 done, buf = split_sentences(buf)
                 for sent in done:
-                    yield sent
+                    if sent := self._strip_end(sent):
+                        yield sent
             if not lookup:
-                if buf.strip():
-                    yield buf.strip()
+                if (last := self._strip_end(buf.strip())):
+                    yield last
                 return
             query = buf.split(":", 1)[-1].strip().splitlines()[0][:120] if ":" in buf else ""
             if not query or not allow:
                 return
             await self._lookup(query)
+
+    def _strip_end(self, text: str) -> str:
+        if "[END]" in text:
+            self.end_after = True
+            text = text.replace("[END]", "").strip()
+        return text
 
     async def _reply(self, turn: int, fixed: str | None, lang: str, then_end: bool) -> None:
         s = get_settings()
@@ -386,8 +422,8 @@ class LiveCall:
                 self.transcript.append({"who": "haanji", "text": said, "lang": lang})
                 if fixed is None or self.history:
                     self.history.append({"role": "assistant", "content": said})
-        if then_end:
-            await self.send_json({"type": "ended", "reason": "scam"})
+        if then_end or self.end_after:
+            await self.send_json({"type": "ended", "reason": "scam" if then_end else "done"})
             self.ended.set()
 
     async def _speak(self, tts, turn: int, sentence: str, lang: str) -> None:
@@ -424,6 +460,19 @@ class LiveCall:
         said = [t for t in self.transcript if t["who"] == "caller"]
         if not said:
             return ""
+        if llm.available() and self.errand is not None:
+            lines = "\n".join(f"{'Them' if t['who'] == 'caller' else 'Haanji'}: {t['text']}" for t in self.transcript)
+            try:
+                return (await llm.chat([
+                    {"role": "system", "content": (
+                        f"Haanji phoned {self.errand.to_name or 'a business'} for {self.owner} to do this: "
+                        f"{self.errand.task}\nWrite ONLY in {LANGUAGES[my_lang]['name']}, one or two plain sentences "
+                        f"for {self.owner}: start with Done, Not done or Partly done, then the exact final details "
+                        f"agreed (day, time, people, name, conditions), or why not and what to do next.")},
+                    {"role": "user", "content": f"Call transcript:\n{lines[:4000]}"},
+                ], max_tokens=300))[:900]
+            except llm.LlmUnavailable:
+                pass
         if llm.available():
             lines = "\n".join(f"{'Caller' if t['who'] == 'caller' else 'Haanji'}: {t['text']}" for t in self.transcript)
             try:

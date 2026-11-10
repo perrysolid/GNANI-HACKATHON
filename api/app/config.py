@@ -37,6 +37,12 @@ class Settings:
     phone_stream_secret: str = os.getenv("PHONE_STREAM_SECRET", "")
     # Whose Haanji answers when the provider doesn't pass ?owner= (10-digit phone of a signed-up user).
     phone_owner: str = os.getenv("PHONE_OWNER", "")
+    # Exotel outgoing calls ("Haanji calls for you"): the flow with the Voicebot applet.
+    exotel_api_key: str = os.getenv("EXOTEL_API_KEY", "")
+    exotel_api_token: str = os.getenv("EXOTEL_API_TOKEN", "")
+    exotel_sid: str = os.getenv("EXOTEL_SID", "")
+    exotel_subdomain: str = os.getenv("EXOTEL_SUBDOMAIN", "api.exotel.com")
+    exotel_flow_id: str = os.getenv("EXOTEL_FLOW_ID", "1381078")
     # Google Maps Platform: map + place search in the app, addresses and landmarks on the server.
     # A browser key by nature (the app loads it); restrict it to the Maps/Places/Geocoding APIs.
     google_maps_key: str = os.getenv("GOOGLE_MAPS_KEY", "")

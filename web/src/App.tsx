@@ -10,6 +10,7 @@ import { CallsTab } from './screens/CallsTab'
 import { ShieldTab } from './screens/ShieldTab'
 import { YouTab } from './screens/YouTab'
 import { Practice } from './screens/Practice'
+import { Errands } from './screens/Errands'
 import { Teach } from './screens/Teach'
 import { Guard } from './screens/Guard'
 import { Captions } from './screens/Captions'
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/teach" element={<Gate need="user"><Teach /></Gate>} />
         <Route path="/guard" element={<Gate need="user"><Guard /></Gate>} />
         <Route path="/captions" element={<Gate need="user"><Captions /></Gate>} />
+        <Route path="/errands" element={<Gate need="user"><Errands /></Gate>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
