@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from ..config import get_settings
 from ..db import Call, Family, SessionLocal, User
+from ..services import hub
 from ..services.live import LiveCall
 
 router = APIRouter()
@@ -121,3 +122,45 @@ async def live(ws: WebSocket):
         await ws.close()
     except RuntimeError:
         pass
+
+
+@router.websocket("/api/watch")
+async def watch(ws: WebSocket):
+    """The owner's app during a phone call: live captions in, typed replies out.
+    First message: {"type":"start","token":..}. Then {"type":"say","text":..} or {"type":"mode","manual":bool}."""
+    await ws.accept()
+    try:
+        start = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=10))
+    except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
+        await ws.close(code=1008)
+        return
+    uid = _user_from(str(start.get("token", "")))
+    ctx = call_context(uid, "rider") if uid else None
+    if not ctx:
+        await ws.close(code=1008)
+        return
+    my_lang = ctx[1].get("my_language") or "en-IN"
+    q = hub.watch(uid)
+    await ws.send_json({"type": "watching", "in_call": hub.active(uid) is not None, "manual": hub.manual.get(uid, False)})
+
+    async def forward():
+        while True:
+            await ws.send_json(await q.get())
+
+    sender = asyncio.create_task(forward())
+    try:
+        while True:
+            m = json.loads(await ws.receive_text())
+            call = hub.active(uid)
+            if m.get("type") == "mode":
+                hub.manual[uid] = bool(m.get("manual"))
+                if call:
+                    call.manual = hub.manual[uid]
+            elif m.get("type") == "say" and call:
+                hub.publish(uid, {"type": "typed", "text": str(m.get("text", ""))[:400]})
+                await call.say(str(m.get("text", "")), my_lang)
+    except (WebSocketDisconnect, RuntimeError, ValueError):
+        pass
+    finally:
+        sender.cancel()
+        hub.unwatch(uid, q)

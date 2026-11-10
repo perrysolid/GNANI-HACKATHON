@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import init_db
-from .routes import auth, live, me, phone, shield, voice
+from .routes import auth, guard, live, me, phone, shield, voice
 from .services import llm
 
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth.router, me.router, voice.router, shield.router, live.router, phone.router):
+for r in (auth.router, me.router, voice.router, shield.router, live.router, phone.router, guard.router):
     app.include_router(r)
 
 

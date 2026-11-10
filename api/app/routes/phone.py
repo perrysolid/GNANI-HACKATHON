@@ -24,6 +24,7 @@ from ..config import get_settings
 from ..db import Call, SessionLocal, User
 from ..services.live import RATE, LiveCall
 from ..services.ownership import number_owner
+from ..services import hub
 from .live import MAX_CALL_SECONDS, call_context
 
 router = APIRouter()
@@ -176,6 +177,8 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
 
     async def on_event(e: dict):
         kind = e.get("type")
+        if kind in ("heard", "reply_start", "reply_text", "interrupted", "shield", "error"):
+            hub.publish(uid, e)
         if kind == "reply_start":
             state["turn"], state["buf"] = e["turn"], b""
         elif kind == "speech_start" and state["turn"] != -1:
@@ -217,6 +220,8 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
             pass
         call.ended.set()
 
+    hub.attach(uid, call)
+    hub.publish(uid, {"type": "call_start", "caller": caller, "language": call.home_lang, "manual": call.manual})
     runner = asyncio.create_task(call.run())
     pumper = asyncio.create_task(pump())
     try:
@@ -226,6 +231,8 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
     except Exception:
         log.exception("phone call failed")
         call.ended.set()
+    finally:
+        hub.detach(uid, call)
 
     # Let the goodbye finish playing before we drop the line.
     if call.verdict == "scam" and not pumper.done():
@@ -242,6 +249,7 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
                     language=call.caller_lang, verdict="scam" if call.verdict == "scam" else "ok",
                     summary=summary or "", transcript=call.transcript))
         db.commit()
+    hub.publish(uid, {"type": "call_end", "summary": summary or "", "verdict": call.verdict})
     try:
         await ws.close()
     except RuntimeError:
