@@ -101,7 +101,7 @@ def facts(profile: dict, now: datetime | None = None) -> str:
     a = profile.get("address") or {}
     home = ", ".join(x for x in (a.get("house"), a.get("area")) if x)
     if home:
-        bits = [f"Home: {home}"]
+        bits = [f"HOME ADDRESS (say it exactly like this first): {home}"]
         if a.get("landmark"):
             bits.append(f"landmark: {a['landmark']}")
         if a.get("note"):
@@ -121,13 +121,19 @@ def facts(profile: dict, now: datetime | None = None) -> str:
         hours = ((now or datetime.now(timezone.utc)) - at).total_seconds() / 3600
         if hours <= 12:
             ist = at.astimezone(timezone(timedelta(hours=5, minutes=30))).strftime("%-I:%M %p").lower()
-            line = f"CURRENT LOCATION (shared from their phone at {ist}): {live.get('place') or 'unknown street'}."
+            n = places.get("now") or {}
+            typed = n.get("address", "")
+            addr = f"{typed} (on the map: {live['place']})" if typed and live.get("place") else typed or live.get("place") or "unknown street"
+            line = f"CURRENT LOCATION, set at {ist}. ADDRESS (say it exactly like this first): {addr}."
+            if n.get("label"):
+                line += f" Their instructions: {n['label']}."
             if live.get("near"):
-                line += " Landmarks around it: " + "; ".join(
-                    f"{p['name']} ({p['kind']}) {p['m']} m {p['dir']}" for p in live["near"]) + "."
+                line += " Landmarks to help find it: " + "; ".join(
+                    f"{p['name']} ({p['kind']}) " + ("right there" if p["m"] < 15 else f"{p['m']} m {p['dir']}")
+                    for p in live["near"]) + "."
             lines.append(line)
     n = places.get("now") or {}
-    if n.get("address") or n.get("label"):
+    if not (live.get("at") and lines and lines[-1].startswith("CURRENT LOCATION")) and (n.get("address") or n.get("label")):
         when = f" (shared at {n['at']})" if n.get("at") else ""
         lines.append(f"Where they are right now{when}: {', '.join(x for x in (n.get('label'), n.get('address')) if x)}.")
 

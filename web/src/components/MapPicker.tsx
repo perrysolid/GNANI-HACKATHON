@@ -95,15 +95,20 @@ export function MapPicker({ open, title, start, locate, onClose, onPick }: {
       map.current = m
       const geocoder = new g.Geocoder()
       m.addListener('dragstart', () => { setMoving(true); setResults([]); setLabel('') })
+      let last: { lat: number; lng: number } | null = null
       m.addListener('idle', () => {
         setMoving(false)
         const c = m.getCenter()
-        if (!c || m.getZoom() < 14) { setAddress(''); return }
+        if (!c || m.getZoom() < 14) { setAddress(''); last = null; return }
+        // Maps fires idle for tiles and zoom too: only look up again when the pin really moved.
+        const now = { lat: c.lat(), lng: c.lng() }
+        if (last && Math.abs(last.lat - now.lat) < 0.00003 && Math.abs(last.lng - now.lng) < 0.00003) return
+        last = now
         setFinding(true)
         geocoder.geocode({ location: c }).then((r: any) => {
           const best = r.results.find((x: any) => !x.types.includes('plus_code')) ?? r.results[0]
-          setAddress(best ? shortAddress(best.formatted_address) : '')
-        }).catch(() => setAddress('')).finally(() => setFinding(false))
+          if (best) setAddress(shortAddress(best.formatted_address))
+        }).catch(() => {}).finally(() => setFinding(false))
       })
       if (locate && !start) goToMe()
     }).catch((e) => setErr(e.message))
@@ -152,7 +157,8 @@ export function MapPicker({ open, title, start, locate, onClose, onPick }: {
     catch (e: any) { setErr(e.message || 'Couldn’t save') }
     setSaving(false)
   }
-  const ready = !!address && !moving && !finding
+  // The pin is what's saved; the address is a label. Confirm works as soon as the map stops.
+  const ready = !moving && !!map.current && (map.current.getZoom?.() ?? 0) >= 14
 
   return (
     <AnimatePresence>
@@ -202,9 +208,9 @@ export function MapPicker({ open, title, start, locate, onClose, onPick }: {
           <footer className="space-y-3 px-5 pt-4 bottom-safe">
             <div className="min-h-[52px]">
               <p className="tag">Pin is at</p>
-              <p className={clsx('mt-1 text-[16px] font-semibold leading-snug', !ready && 'text-ink/35')}>
+              <p className={clsx('mt-1 text-[16px] font-semibold leading-snug transition-opacity', (moving || finding) && 'opacity-40')}>
                 {label && <span>{label} · </span>}
-                {moving ? 'Moving…' : finding ? 'Finding the address…' : address || 'Move the map to put the pin on your gate'}
+                {address || (finding ? 'Finding the address…' : 'Zoom in and put the pin on your gate')}
               </p>
             </div>
             {err && <p className="text-[14px] font-medium">{err}</p>}

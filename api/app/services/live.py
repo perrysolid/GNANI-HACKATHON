@@ -56,6 +56,12 @@ FILLER = {
     "pa-IN": "ਇੱਕ ਮਿੰਟ, ਮੈਪ ਤੇ ਦੇਖ ਕੇ ਦੱਸਦੇ ਹਾਂ।",
 }
 
+FALLBACK = {
+    "hi-IN": "आपको यहाँ आना है: {addr}. आसपास कौन सी बड़ी दुकान या सड़क दिख रही है?",
+    "en-IN": "You need to come to {addr}. What big shop or main road can you see near you?",
+    "kn-IN": "ನೀವು ಇಲ್ಲಿಗೆ ಬರಬೇಕು: {addr}. ಹತ್ತಿರ ಯಾವ ದೊಡ್ಡ ಅಂಗಡಿ ಅಥವಾ ರಸ್ತೆ ಕಾಣ್ತಿದೆ?",
+}
+
 GOODBYE = {
     "hi-IN": "{name} जी अभी उपलब्ध नहीं हैं। वे खुद आपको कॉल करेंगे। धन्यवाद।",
     "en-IN": "{name} is not available and will call you back. Thank you.",
@@ -178,10 +184,14 @@ class LiveCall:
             f"{common} You answer calls for {self.owner}, who can't pick up. Callers can be anyone: "
             f"a delivery rider or cab driver who needs directions, a courier, a friend, a colleague, "
             f"a shop. First understand who is calling and what they need, then help using ONLY the "
-            f"facts below. For deliveries, ask which app or service they're from before giving the "
-            f"address. If CURRENT LOCATION is given, deliveries, orders and rides go THERE (not home): "
+            f"facts below. RIDERS AND DRIVERS are in a hurry: talk like a helpful local, short and casual "
+            f"(in Hindi call them bhaiya). Don't ask which app or for an order name. As soon as they say "
+            f"they're coming, ask where they are right now ('कहाँ हो भैया, आसपास क्या दिख रहा है?'). "
+            f"If CURRENT LOCATION is given, deliveries, orders and rides go THERE (not home): "
             f"name the place, ask what the caller can see, and guide them turn by turn using the "
-            f"landmarks around it (distances and directions are given). If THEIR WORK is listed, also act "
+            f"landmarks around it (distances and directions are given). When you give an address, ALWAYS say "
+            f"the ADDRESS exactly as written first (flat or house number, building, street, area), then one or "
+            f"two landmarks to help find it; landmarks never replace the address. If THEIR WORK is listed, also act "
             f"as the receptionist: answer customers or patients from those answers, and for a booking "
             f"take their name, preferred time and reason, then say {self.owner} will confirm. Never give "
             f"medical advice or diagnoses. If something isn't covered, take a message and say {self.owner} will call back. "
@@ -211,7 +221,8 @@ class LiveCall:
         if live.get("lat") and live.get("at"):
             age = datetime.now(timezone.utc) - datetime.fromisoformat(live["at"])
             if age.total_seconds() < 12 * 3600:
-                return {"lat": live["lat"], "lng": live["lng"], "label": live.get("place") or "their current location",
+                typed = ((self.profile.get("knowledge") or {}).get("places") or {}).get("now", {}).get("address")
+                return {"lat": live["lat"], "lng": live["lng"], "label": typed or live.get("place") or "their current location",
                         "near": live.get("near") or []}
         if self._dest is None:
             a = self.profile.get("address") or {}
@@ -239,7 +250,7 @@ class LiveCall:
                 f"Distance {r['distance']}, about {r['time']} by bike or car. Steps: " + " | ".join(r["steps"]) + ".\n"
                 f"How to guide: in your FIRST reply after this, say where they are and where they need to come, "
                 f"and how far it is (for example: 'You're at Agara Lake, you need to come to 17th Cross, HSR "
-                f"Layout, about one and a half kilometres, five minutes'). Then give only the first one or two "
+                f"Layout, about one and a half kilometres, five minutes'), using the address exactly as written. Then give only the first one or two "
                 f"steps the way Google Maps says them: which road to take and towards which road or landmark (never "
                 f"north/south/east/west), how far, then turn "
                 f"left or right, and the landmark they'll see on the left or right. Ask them to tell you when "
@@ -397,6 +408,7 @@ class LiveCall:
             return
         for allow in (True, False):
             buf, lookup, decided = "", False, False
+            t0 = asyncio.get_running_loop().time()
             async for chunk in llm.stream([{"role": "system", "content": self._system(allow)}, *self.history[-12:]], 400):
                 buf += chunk
                 if not decided:
@@ -404,6 +416,14 @@ class LiveCall:
                     if len(head) < 7 and "LOOKUP:".startswith(head):
                         continue  # might be a map lookup: don't speak yet
                     decided, lookup = True, head.startswith("LOOKUP")
+                if not lookup and "LOOKUP:" in buf:
+                    # "Okay bhaiya. LOOKUP: Agara signal": say the words before it, then look it up.
+                    before, after = buf.split("LOOKUP:", 1)
+                    done, rest = split_sentences(before)
+                    for sent in [*done, rest.strip()]:
+                        if sent := self._strip_end(sent):
+                            yield sent
+                    buf, lookup = "LOOKUP:" + after, True
                 if lookup:
                     continue
                 done, buf = split_sentences(buf)
@@ -416,11 +436,16 @@ class LiveCall:
                 return
             query = buf.split(":", 1)[-1].strip().splitlines()[0][:120] if ":" in buf else ""
             if not query or not allow:
+                # Asked for a map lookup it can't do now: never leave the line silent.
+                dest = await self._destination() if get_settings().google_maps_key else None
+                yield FALLBACK.get(self.caller_lang, FALLBACK["en-IN"]).format(
+                    addr=(dest or {}).get("label") or self._address())
                 return
             # Say something while the map lookup runs, so the line isn't silent.
             task = asyncio.create_task(self._lookup(query))
             yield FILLER.get(self.caller_lang, FILLER["en-IN"])
             await task
+            log.info("lookup turn took %.1fs (model + map)", asyncio.get_running_loop().time() - t0)
 
     def _strip_end(self, text: str) -> str:
         if "[END]" in text:

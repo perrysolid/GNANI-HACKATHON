@@ -309,6 +309,7 @@ function RightNow({ value, onChange, compact }: { value?: { label?: string; addr
   const [busy, setBusy] = useState(false)
   const [picking, setPicking] = useState(false)
   const [err, setErr] = useState('')
+  const typed = (value?.address ?? me?.profile.knowledge?.places?.now?.address ?? '').trim()
   const time = loc?.at ? new Date(loc.at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''
   const live = me?.profile.live
   const start = live?.lat ? { lat: live.lat, lng: live.lng } : undefined
@@ -317,7 +318,11 @@ function RightNow({ value, onChange, compact }: { value?: { label?: string; addr
     setLoc(l)
     if (me) setMe({ ...me, profile: { ...me.profile, live: { ...l, lat, lng } } })
   }
-  const pick = async (p: Picked) => saved(await api.shareLocation(p.lat, p.lng, 10, p.label), p.lat, p.lng)
+  const pick = async (p: Picked) => {
+    saved(await api.shareLocation(p.lat, p.lng, 10, p.label), p.lat, p.lng)
+    // Prefill the exact address so they only add the flat or table number.
+    if (onChange) onChange({ ...value, address: [p.label, p.address].filter(Boolean).join(', '), at: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) })
+  }
 
   // Without a map key: straight GPS.
   const take = () => {
@@ -349,7 +354,10 @@ function RightNow({ value, onChange, compact }: { value?: { label?: string; addr
         </div>
         {loc?.place && (
           <div className="border-t border-white/10 px-5 py-4">
-            <p className="text-[15px] font-medium">{loc.place}</p>
+            {typed && <p className="text-[16px] font-semibold">{typed}</p>}
+            {!(typed && loc.place.split(',').slice(-3).every((part) => typed.includes(part.trim()))) && (
+              <p className={typed ? 'mt-0.5 text-[13px] text-white/55' : 'text-[15px] font-medium'}>{typed ? `On the map: ${loc.place}` : loc.place}</p>
+            )}
             {loc.near.length > 0 && (
               <ul className="mt-3 space-y-1.5">
                 {loc.near.slice(0, 4).map((l) => (
@@ -376,16 +384,14 @@ function RightNow({ value, onChange, compact }: { value?: { label?: string; addr
       {!compact && onChange && (<>
 
       <label className="block">
+        <span className="mb-1.5 block text-[14px] font-medium text-muted">Exact address (Haanji says this first)</span>
+        <input className="field" maxLength={300} value={value?.address ?? ''} placeholder="Table 4, Third Wave Coffee, 17th Cross, HSR"
+          onChange={(e) => onChange({ ...value, address: e.target.value, at: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) })} />
+      </label>
+      <label className="block">
         <span className="mb-1.5 block text-[14px] font-medium text-muted">Extra instructions (optional)</span>
         <input className="field" maxLength={300} value={value?.label ?? ''} placeholder="Upstairs, table by the window" onChange={(e) => onChange({ ...value, label: e.target.value })} />
       </label>
-      {!loc && (
-        <label className="block">
-          <span className="mb-1.5 block text-[14px] font-medium text-muted">Or type where you are</span>
-          <input className="field" maxLength={300} value={value?.address ?? ''} placeholder="Third Wave Coffee, 12th Main, Indiranagar"
-            onChange={(e) => onChange({ ...value, address: e.target.value, at: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) })} />
-        </label>
-      )}
       </>)}
     </>
   )
