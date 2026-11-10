@@ -16,6 +16,8 @@ class Address(BaseModel):
     area: str = Field(default="", max_length=160)
     landmark: str = Field(default="", max_length=200)
     note: str = Field(default="", max_length=200)
+    lat: float | None = Field(default=None, ge=-90, le=90)  # the pin, when picked on the map
+    lng: float | None = Field(default=None, ge=-180, le=180)
 
 
 class ProfileIn(BaseModel):

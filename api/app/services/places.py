@@ -112,7 +112,12 @@ async def describe(lat: float, lng: float) -> dict:
 def _plain(html: str) -> str:
     """Directions step HTML -> plain text ("Turn right onto 24th Main Rd. Pass by ...")."""
     import re
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.replace("<div", ". <div"))).replace(" .", ".").strip(" .")
+    t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.replace("<div", ". <div"))).replace(" .", ".").strip(" .")
+    # Riders don't steer by compass: "Head southwest on X" -> "Go along X".
+    t = re.sub(r"\bHead (?:north|south|east|west)(?:east|west)? on\b", "Go along", t)
+    t = re.sub(r"\bHead (?:north|south|east|west)(?:east|west)? toward\b", "Go towards", t)
+    t = re.sub(r"\bHead (?:north|south|east|west)(?:east|west)?\b", "Start moving", t)
+    return t
 
 
 async def geocode(address: str, key: str) -> tuple[float, float] | None:
@@ -129,32 +134,43 @@ async def geocode(address: str, key: str) -> tuple[float, float] | None:
     return None
 
 
+async def _directions(c: httpx.AsyncClient, o: tuple[float, float], dest: tuple[float, float], key: str) -> dict | None:
+    r = await c.get("https://maps.googleapis.com/maps/api/directions/json",
+                    params={"origin": f"{o[0]},{o[1]}", "destination": f"{dest[0]},{dest[1]}",
+                            "mode": "driving", "region": "in", "language": "en", "key": key})
+    routes = r.json().get("routes") or []
+    return routes[0]["legs"][0] if routes else None
+
+
 async def route_from(query: str, dest: tuple[float, float], key: str) -> dict | None:
-    """Find the place a caller says they're at (near the destination) and the way from there.
-    {'from': 'Agara Lake', 'distance': '1.8 km', 'time': '6 mins', 'steps': ['Head north on ...', ...]}"""
+    """Find the place a caller says they're at and the way from there to `dest`.
+    Google's top matches can be the middle of a lake or a park; a rider heading to you is at the
+    nearest one, so the shortest road route among the top matches wins.
+    {'from', 'from_address', 'distance', 'time', 'steps': ['Turn left onto ... (0.2 km)', ...]}"""
+    import asyncio
     async with httpx.AsyncClient(timeout=8) as c:
         try:
             r = await c.post("https://places.googleapis.com/v1/places:searchText",
-                             headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": "places.displayName,places.location"},
-                             json={"textQuery": query, "maxResultCount": 1, "languageCode": "en", "regionCode": "IN",
+                             headers={"X-Goog-Api-Key": key,
+                                      "X-Goog-FieldMask": "places.displayName,places.location,places.formattedAddress"},
+                             json={"textQuery": query, "maxResultCount": 5, "languageCode": "en", "regionCode": "IN",
                                    "locationBias": {"circle": {"center": {"latitude": dest[0], "longitude": dest[1]},
                                                                "radius": 8000}}})
-            places = r.json().get("places") or []
-            if not places:
+            found = [p for p in (r.json().get("places") or [])
+                     if distance_m(p["location"]["latitude"], p["location"]["longitude"], *dest) < 25_000][:4]
+            if not found:
                 return None
-            p = places[0]
-            o = (p["location"]["latitude"], p["location"]["longitude"])
-            if distance_m(*o, *dest) > 25_000:  # matched some other city
+            legs = await asyncio.gather(*[
+                _directions(c, (p["location"]["latitude"], p["location"]["longitude"]), dest, key) for p in found
+            ], return_exceptions=True)
+            best = min(((p, l) for p, l in zip(found, legs) if isinstance(l, dict)),
+                       key=lambda pl: pl[1]["distance"]["value"], default=None)
+            if not best:
                 return None
-            r = await c.get("https://maps.googleapis.com/maps/api/directions/json",
-                            params={"origin": f"{o[0]},{o[1]}", "destination": f"{dest[0]},{dest[1]}",
-                                    "mode": "driving", "region": "in", "language": "en", "key": key})
-            routes = r.json().get("routes") or []
-            if not routes:
-                return None
-            leg = routes[0]["legs"][0]
+            p, leg = best
             steps = [f"{_plain(s['html_instructions'])} ({s['distance']['text']})" for s in leg["steps"]]
-            return {"from": p["displayName"]["text"], "distance": leg["distance"]["text"],
+            addr = ", ".join(x.strip() for x in p.get("formattedAddress", "").split(",")[:-2])
+            return {"from": p["displayName"]["text"], "from_address": addr, "distance": leg["distance"]["text"],
                     "time": leg["duration"]["text"], "steps": steps[:8]}
         except Exception as e:
             log.info("route lookup failed: %s", e)

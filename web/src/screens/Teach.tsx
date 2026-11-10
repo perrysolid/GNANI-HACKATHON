@@ -145,7 +145,7 @@ export function Teach() {
         <motion.section key={type + sub} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }} className="flex-1 space-y-5 px-6 pb-16 pt-6">
           {type === 'places' && sub === 'home' && (
             <>
-              <PickOnMap title="Your home" onPick={(p) => setA({ area: p.address })} />
+              <PickOnMap title="Your home" pinned={!!addr.lat} start={addr.lat && addr.lng ? { lat: addr.lat, lng: addr.lng } : undefined} onPick={(p) => setA({ area: [p.label, p.address].filter(Boolean).join(', '), lat: p.lat, lng: p.lng })} />
               <Field label="Flat, floor, building" value={addr.house} onChange={(v) => setA({ house: v })} placeholder="302, 3rd floor, Sai Residency" />
               <Field label="Street and area" value={addr.area} onChange={(v) => setA({ area: v })} placeholder="4th Cross, HSR Layout Sector 2" />
               <Field label="Landmark" value={addr.landmark} onChange={(v) => setA({ landmark: v })} placeholder="Opposite the Shani temple, blue gate" />
@@ -283,19 +283,19 @@ function Chips({ label, options, value, onChange }: { label: string; options: st
 }
 
 /** Opens the map; the picked address fills a field. */
-function PickOnMap({ title, onPick }: { title: string; onPick: (p: Picked) => void }) {
+function PickOnMap({ title, onPick, pinned, start }: { title: string; onPick: (p: Picked) => void; pinned?: boolean; start?: { lat: number; lng: number } }) {
   const [open, setOpen] = useState(false)
   return (
     <>
       <button onClick={() => setOpen(true)} className="flex w-full items-center gap-3.5 rounded-2xl border border-line bg-card p-3.5 text-left active:bg-ink/[0.03]">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ink text-accent"><MapIcon className="h-5 w-5" /></span>
         <span className="flex-1">
-          <span className="block text-[15px] font-semibold">Pick on map</span>
-          <span className="block text-[13px] text-muted">Search or use your location, then fine-tune the pin</span>
+          <span className="block text-[15px] font-semibold">{pinned ? 'Pinned on the map' : 'Pick on map'}</span>
+          <span className="block text-[13px] text-muted">{pinned ? 'Riders are guided to this exact spot. Tap to move it.' : 'Search or use your location, then put the pin on your gate'}</span>
         </span>
         <ChevronRight className="h-[18px] w-[18px] text-ink/30" />
       </button>
-      <MapPicker open={open} title={title} locate onClose={() => setOpen(false)} onPick={onPick} />
+      <MapPicker open={open} title={title} start={start} locate onClose={() => setOpen(false)} onPick={onPick} />
     </>
   )
 }

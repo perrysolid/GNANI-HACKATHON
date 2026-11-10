@@ -43,6 +43,19 @@ GREETING = {
     "pa-IN": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ, ਇਹ {name} ਦਾ ਫ਼ੋਨ ਹੈ, ਹਾਂਜੀ ਬੋਲ ਰਹੇ ਹਾਂ। ਦੱਸੋ?",
 }
 
+FILLER = {
+    "hi-IN": "एक मिनट, मैप पर देखकर बताते हैं।",
+    "en-IN": "One moment, let me check the map for you.",
+    "kn-IN": "ಒಂದು ನಿಮಿಷ, ಮ್ಯಾಪ್ ನೋಡಿ ಹೇಳ್ತೀನಿ.",
+    "ta-IN": "ஒரு நிமிஷம், மேப்ல பார்த்து சொல்றேன்.",
+    "te-IN": "ఒక్క నిమిషం, మ్యాప్‌లో చూసి చెప్తాను.",
+    "ml-IN": "ഒരു മിനിറ്റ്, മാപ്പിൽ നോക്കി പറയാം.",
+    "mr-IN": "एक मिनिट, मॅपवर बघून सांगू.",
+    "bn-IN": "এক মিনিট, ম্যাপে দেখে বলছি।",
+    "gu-IN": "એક મિનિટ, મેપમાં જોઈને કહું છું.",
+    "pa-IN": "ਇੱਕ ਮਿੰਟ, ਮੈਪ ਤੇ ਦੇਖ ਕੇ ਦੱਸਦੇ ਹਾਂ।",
+}
+
 GOODBYE = {
     "hi-IN": "{name} जी अभी उपलब्ध नहीं हैं। वे खुद आपको कॉल करेंगे। धन्यवाद।",
     "en-IN": "{name} is not available and will call you back. Thank you.",
@@ -186,37 +199,61 @@ class LiveCall:
             " MAP: if the caller (a rider or driver) tells you where they are right now - a shop, landmark, "
             "signal, road or area - and needs the way, reply with ONLY one line: LOOKUP: <that place in English "
             "letters, with the area if they said it>. Nothing else. You will then get the route from there and guide "
-            "them. Don't LOOKUP the same place twice."
+            "them. If they later say they are somewhere NEW (another road, shop or landmark), LOOKUP that place "
+            "again instead of continuing the old route. Never LOOKUP the same place twice."
         )
 
-    async def _destination(self) -> tuple[float, float] | None:
-        """Where riders should come: current location if shared in the last 12 h, else home."""
+    async def _destination(self) -> dict | None:
+        """Where riders should come: {'lat','lng','label','near'}. The current location if it was set in the
+        last 12 h, else the pin on the home address (or the home address found on the map)."""
         from datetime import datetime, timezone
         live = self.profile.get("live") or {}
         if live.get("lat") and live.get("at"):
             age = datetime.now(timezone.utc) - datetime.fromisoformat(live["at"])
             if age.total_seconds() < 12 * 3600:
-                return live["lat"], live["lng"]
+                return {"lat": live["lat"], "lng": live["lng"], "label": live.get("place") or "their current location",
+                        "near": live.get("near") or []}
         if self._dest is None:
             a = self.profile.get("address") or {}
-            line = ", ".join(x for x in (a.get("area"), self.profile.get("city")) if x)
-            if line:
-                self._dest = await places.geocode(line, get_settings().google_maps_key)
-        return self._dest
+            label = ", ".join(x for x in (a.get("house"), a.get("area")) if x)
+            if a.get("landmark"):
+                label += f" ({a['landmark']})"
+            ll = (a["lat"], a["lng"]) if a.get("lat") and a.get("lng") else None
+            if not ll:
+                line = ", ".join(x for x in (a.get("house"), a.get("area"), self.profile.get("city")) if x)
+                ll = await places.geocode(line, get_settings().google_maps_key) if line else None
+            self._dest = {"lat": ll[0], "lng": ll[1], "label": label or "their home", "near": []} if ll else {}
+        return self._dest or None
 
     async def _lookup(self, query: str) -> None:
         dest = await self._destination()
-        r = await places.route_from(query, dest, get_settings().google_maps_key) if dest else None
-        if r:
+        key = get_settings().google_maps_key
+        city = self.profile.get("city") or ""
+        q = query if not city or city.lower() in query.lower() else f"{query}, {city}"
+        r = await places.route_from(q, (dest["lat"], dest["lng"]), key) if dest else None
+        if r and dest:
+            near = "; ".join(f"{p['name']} {p['m']} m {p['dir']}" for p in dest["near"][:3])
             self.route_note = (
-                f"\n\nROUTE from where the caller is ({r['from']}) to {self.owner}: {r['distance']}, about {r['time']} "
-                f"by road. Steps: " + "; ".join(r["steps"]) + ". Guide them ONE or TWO steps at a time in plain "
-                f"words, using roads and landmarks; ask them to call back or say when they reach the next turn."
+                f"\n\nROUTE (from Google Maps). The caller is at: {r['from']} ({r['from_address']}). "
+                f"They must come to: {dest['label']}" + (f" (nearby: {near})" if near else "") + ". "
+                f"Distance {r['distance']}, about {r['time']} by bike or car. Steps: " + " | ".join(r["steps"]) + ".\n"
+                f"How to guide: in your FIRST reply after this, say where they are and where they need to come, "
+                f"and how far it is (for example: 'You're at Agara Lake, you need to come to 17th Cross, HSR "
+                f"Layout, about one and a half kilometres, five minutes'). Then give only the first one or two "
+                f"steps the way Google Maps says them: which road to take and towards which road or landmark (never "
+                f"north/south/east/west), how far, then turn "
+                f"left or right, and the landmark they'll see on the left or right. Ask them to tell you when "
+                f"they reach it, then give the next steps. At the end, describe the gate using the landmark. "
+                f"If they say they are on a road or at a place that is NOT on these steps, don't argue: reply "
+                f"with LOOKUP: <that place> to get a fresh route from there."
             )
             await self.send_json({"type": "route", "from": r["from"], "distance": r["distance"], "time": r["time"]})
+        elif not dest:
+            self.route_note = "\n\nROUTE: no saved location to guide them to. Give the address from the facts."
         else:
-            self.route_note = f"\n\nROUTE: '{query}' was not found on the map. Ask for a bigger landmark or main road nearby."
-        log.info("lookup %r -> %s", query, "found" if r else "not found")
+            self.route_note = (f"\n\nROUTE: '{query}' was not found on the map. Ask for a bigger landmark, "
+                               f"a main road or a well-known shop near them.")
+        log.info("lookup %r -> %s to %s", q, (r or {}).get("from_address", "not found"), (dest or {}).get("label"))
 
     # ---- audio in -------------------------------------------------------------------
 
@@ -380,7 +417,10 @@ class LiveCall:
             query = buf.split(":", 1)[-1].strip().splitlines()[0][:120] if ":" in buf else ""
             if not query or not allow:
                 return
-            await self._lookup(query)
+            # Say something while the map lookup runs, so the line isn't silent.
+            task = asyncio.create_task(self._lookup(query))
+            yield FILLER.get(self.caller_lang, FILLER["en-IN"])
+            await task
 
     def _strip_end(self, text: str) -> str:
         if "[END]" in text:

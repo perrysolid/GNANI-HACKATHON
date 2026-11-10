@@ -45,7 +45,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) })
 
 export type Lang = string
-export type Address = { house: string; area: string; landmark: string; note: string }
+export type Address = { house: string; area: string; landmark: string; note: string; lat?: number | null; lng?: number | null }
 export type Place = { name?: string; address?: string; landmark?: string; note?: string }
 export type Drop = { to?: string; leave?: string; call_first?: boolean; note?: string }
 export type Knowledge = {
