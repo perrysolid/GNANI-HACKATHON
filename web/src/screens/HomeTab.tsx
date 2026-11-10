@@ -23,6 +23,7 @@ function greeting() {
 
 export function HomeTab() {
   const { me, haanjiNumber, setMe } = useApp()
+  const guard = !!me?.profile.scam_guard
   const [claiming, setClaiming] = useState(false)
   const [audio, setAudio] = useState<'idle' | 'loading' | 'playing'>('idle')
   const [err, setErr] = useState('')
@@ -89,27 +90,27 @@ export function HomeTab() {
             <p className="mt-1 text-[13px] text-muted">Talk to it as any caller</p>
           </Link>
         </motion.div>
-        <motion.div {...item(3)}>
+        {guard && <motion.div {...item(3)}>
           <Link to="/guard" className="card flex h-full flex-col p-5 active:scale-[0.98] transition">
             <span className="grid h-11 w-11 place-items-center rounded-xl bg-ink text-accent"><Ear className="h-[22px] w-[22px]" /></span>
             <p className="mt-6 text-[16px] font-semibold leading-snug">Guard a call</p>
             <p className="mt-1 text-[13px] text-muted">Put it on speaker, Haanji listens</p>
           </Link>
-        </motion.div>
+        </motion.div>}
         <motion.div {...item(4)}>
           <Link to="/captions" className="card flex h-full flex-col p-5 active:scale-[0.98] transition">
             <span className="grid h-11 w-11 place-items-center rounded-xl bg-ink/[0.06] text-ink"><Captions className="h-[22px] w-[22px]" /></span>
-            <p className="mt-6 text-[16px] font-semibold leading-snug">Live captions</p>
-            <p className="mt-1 text-[13px] text-muted">Read calls, type replies</p>
+            <p className="mt-6 text-[16px] font-semibold leading-snug">Live calls</p>
+            <p className="mt-1 text-[13px] text-muted">Join, read or type</p>
           </Link>
         </motion.div>
-        <motion.div {...item(5)}>
+        {guard && <motion.div {...item(5)}>
           <Link to="/shield" className="card flex h-full flex-col p-5 active:scale-[0.98] transition">
             <span className="grid h-11 w-11 place-items-center rounded-xl bg-ink/[0.06] text-ink"><ShieldAlert className="h-[22px] w-[22px]" /></span>
             <p className="mt-6 text-[16px] font-semibold leading-snug">Check a call</p>
             <p className="mt-1 text-[13px] text-muted">Paste or say it</p>
           </Link>
-        </motion.div>
+        </motion.div>}
       </div>
 
       <motion.section {...item(4)} className="card mt-4 overflow-hidden">

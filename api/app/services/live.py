@@ -62,6 +62,10 @@ def split_sentences(buf: str) -> tuple[list[str], str]:
     return done, rest
 
 
+# After the owner speaks on a shared call, Haanji leaves the next replies to them for this long.
+OWNER_HOLD_S = 10.0
+
+
 class LiveCall:
     def __init__(
         self,
@@ -95,6 +99,10 @@ class LiveCall:
         self._stt = None
         # Typing mode (deaf users): the owner types, Haanji only speaks what they type.
         self.manual = False
+        # Scam guard: only when the owner turned it on (or in the scam practice call).
+        self.guard = persona == "screen" or bool(profile.get("scam_guard"))
+        # Owner joined the call ("on the call with me"): Haanji steps back while they talk.
+        self.owner_spoke_at = 0.0
 
     # ---- who Haanji is speaking for -------------------------------------------------
 
@@ -136,7 +144,7 @@ class LiveCall:
             f"a delivery rider or cab driver who needs directions, a courier, a friend, a colleague, "
             f"a shop. First understand who is calling and what they need, then help using ONLY the "
             f"facts below. For deliveries, ask which app or service they're from before giving the "
-            f"address. If they are coming to where {self.owner} is right now, use the LIVE LOCATION: "
+            f"address. If CURRENT LOCATION is given, deliveries, orders and rides go THERE (not home): "
             f"name the place, ask what the caller can see, and guide them turn by turn using the "
             f"landmarks around it (distances and directions are given). If THEIR WORK is listed, also act "
             f"as the receptionist: answer customers or patients from those answers, and for a booking "
@@ -224,15 +232,20 @@ class LiveCall:
         await self.send_json({"type": "heard", "text": text, "language": self.caller_lang})
 
         caller_text = " ".join(t["text"] for t in self.transcript if t["who"] == "caller")
-        self.verdict = analyse(caller_text).level
+        if self.guard:
+            self.verdict = analyse(caller_text).level
         if self.verdict == "scam":
             goodbye = GOODBYE.get(self.caller_lang, GOODBYE["en-IN"]).format(name=self.speaking_for)
             lang = self.caller_lang if self.caller_lang in GOODBYE else "en-IN"
             await self.send_json({"type": "shield", "level": "scam"})
             self._start_reply(fixed=goodbye, lang=lang, then_end=True)
             return
-        if not self.manual:
+        owner_talking = asyncio.get_running_loop().time() - self.owner_spoke_at < OWNER_HOLD_S
+        if not self.manual and not owner_talking:
             self._start_reply()
+
+    def owner_spoke(self) -> None:
+        self.owner_spoke_at = asyncio.get_running_loop().time()
 
     async def say(self, text: str, from_lang: str) -> None:
         """Speak the owner's typed reply to the caller, in the caller's language."""

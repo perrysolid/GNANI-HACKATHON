@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { api, type ShieldResult } from '../lib/api'
 import { SIGNAL_LABEL } from '../lib/data'
 import { useApp } from '../lib/store'
-import { ErrorText, MicButton, Spinner } from '../components/ui'
+import { ErrorText, MicButton, Spinner, Toggle } from '../components/ui'
 import { PageHeader } from './Shell'
 import { who } from './steps/Family'
 
@@ -30,12 +30,36 @@ export function ShieldTab() {
   }
 
   const look = result ? LOOK[result.level] : null
+  const setMe = useApp((s) => s.setMe)
+  const guardOn = !!me?.profile.scam_guard
+  const setGuard = async (on: boolean) => {
+    if (me) setMe({ ...me, profile: { ...me.profile, scam_guard: on } })
+    try { setMe(await api.updateMe({ scam_guard: on })) } catch (e: any) { setErr(e.message) }
+  }
+  const guardSwitch = (
+    <div className="card px-5">
+      <Toggle on={guardOn} onChange={setGuard} label="Scam guard for grandparents"
+        hint={guardOn ? 'Haanji screens calls to your number and cuts scams.' : 'Off. Haanji answers calls without scam checks.'} />
+    </div>
+  )
+
+  if (!guardOn) return (
+    <div>
+      <PageHeader title="Shield" sub="Protect elders from fraud calls." />
+      <div className="px-5">
+        {guardSwitch}
+        <p className="mt-4 px-1 text-[14px] leading-relaxed text-muted">Turn it on for a parent or grandparent. Haanji then listens for digital arrest, KYC, OTP and money scams, warns out loud and ends the call.</p>
+        <ErrorText>{err}</ErrorText>
+      </div>
+    </div>
+  )
 
   return (
     <div>
       <PageHeader title="Shield" sub="Got a strange call? Tell Haanji what they said." />
 
       <div className="px-5">
+        {guardSwitch}
         <Link to="/guard" className="mt-3 flex items-center gap-4 rounded-3xl bg-accent p-5 text-ink active:scale-[0.98] transition">
           <span className="grid h-11 w-11 place-items-center rounded-xl bg-ink text-accent"><Ear className="h-5 w-5" /></span>
           <div className="flex-1">

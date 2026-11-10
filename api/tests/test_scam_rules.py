@@ -49,3 +49,15 @@ def test_everyday_calls_stay_clean():
     for text in ["Beta kal hospital jaana hai, gaadi le aana", "Bhaiya aapka parcel Amazon se hai, gate pe aa jaiye",
                  "Doctor sahab ki timing kya hai, appointment chahiye"]:
         assert analyse(text).level == "no_signs", text
+
+
+def test_calls_are_only_screened_when_the_guard_is_on():
+    from app.services.live import LiveCall
+
+    async def nothing(_):
+        return None
+    make = lambda persona, profile: LiveCall(persona=persona, owner_name="P", profile=profile, protected=None,
+                                             send_json=nothing, send_audio=nothing)
+    assert make("rider", {}).guard is False
+    assert make("rider", {"scam_guard": True}).guard is True
+    assert make("screen", {}).guard is True  # the scam practice call always screens

@@ -60,6 +60,7 @@ export type Landmark = { name: string; kind: string; m: number; dir: string }
 export type LiveLocation = { place: string; near: Landmark[]; at: string }
 export type Profile = {
   purposes?: ('general' | 'away' | 'family')[]
+  scam_guard?: boolean
   my_language?: Lang
   city?: string
   local_language?: Lang
@@ -86,7 +87,9 @@ export type Profession = { id: string; label: string; questions: { id: string; t
 
 export const api = {
   catalog: () => request<{ professions: Profession[] }>('/api/catalog'),
-  config: () => request<{ haanji_number: string; otp_dev_mode: boolean }>('/api/auth/config'),
+  config: () => request<{ haanji_number: string; otp_dev_mode: boolean; demo_login: boolean }>('/api/auth/config'),
+  demoSignIn: (phone: string, name: string) =>
+    request<{ token: string; onboarded: boolean; name: string }>('/api/auth/demo', json('POST', { phone, name })),
   sendCode: (phone: string, channel: 'sms' | 'voice') =>
     request<{ session_id: string; dev_code: string | null }>('/api/auth/send', json('POST', { phone, channel })),
   verifyCode: (session_id: string, code: string, name: string) =>
