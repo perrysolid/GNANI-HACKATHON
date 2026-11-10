@@ -92,7 +92,7 @@ export function Onboarding() {
     setDir(-1); setIndex((i) => i - 1)
   }
 
-  // After OTP: returning users who finished setup go straight home.
+  // After OTP (or demo sign-in): returning users who finished setup go straight home.
   const onSignedIn = async (onboarded: boolean) => {
     const fresh = await api.me()
     setMe(fresh)
@@ -105,7 +105,7 @@ export function Onboarding() {
   const props: StepProps = { draft, update, next }
   const screens: Record<StepId, ReactNode> = {
     name: <NameStep {...props} />,
-    phone: <PhoneStep {...props} />,
+    phone: <PhoneStep {...props} onSignedIn={onSignedIn} />,
     otp: <OtpStep {...props} onSignedIn={onSignedIn} />,
     purpose: <PurposeStep {...props} />,
     language: <LanguageStep {...props} />,

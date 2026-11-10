@@ -37,6 +37,8 @@ class Settings:
     phone_stream_secret: str = os.getenv("PHONE_STREAM_SECRET", "")
     # Whose Haanji answers when the provider doesn't pass ?owner= (10-digit phone of a signed-up user).
     phone_owner: str = os.getenv("PHONE_OWNER", "")
+    # Hackathon demo: sign in with just a phone number (no SMS). Accounts verified by SMS still need the code.
+    demo_login: bool = os.getenv("DEMO_LOGIN", "1") == "1"
 
     @property
     def is_prod(self) -> bool:

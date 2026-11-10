@@ -5,6 +5,7 @@ type State = {
   me: Me | null
   loading: boolean
   haanjiNumber: string
+  demoLogin: boolean
   load: () => Promise<Me | null>
   setMe: (me: Me) => void
   signOut: () => void
@@ -14,8 +15,9 @@ export const useApp = create<State>((set) => ({
   me: null,
   loading: true,
   haanjiNumber: '',
+  demoLogin: false,
   async load() {
-    api.config().then((c) => set({ haanjiNumber: c.haanji_number })).catch(() => {})
+    api.config().then((c) => set({ haanjiNumber: c.haanji_number, demoLogin: c.demo_login })).catch(() => {})
     if (!token.get()) { set({ loading: false }); return null }
     try {
       const me = await api.me()

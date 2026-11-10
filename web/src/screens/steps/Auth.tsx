@@ -2,6 +2,7 @@ import { motion } from 'framer-motion'
 import { clsx } from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { api, token } from '../../lib/api'
+import { useApp } from '../../lib/store'
 import { ErrorText, Spinner } from '../../components/ui'
 import { StepFrame, type StepProps } from '../Onboarding'
 
@@ -33,28 +34,51 @@ export function NameStep({ draft, update, next }: StepProps) {
   )
 }
 
-export function PhoneStep({ draft, update, next }: StepProps) {
-  const [busy, setBusy] = useState(false)
+export function PhoneStep({ draft, update, next, onSignedIn }: StepProps & { onSignedIn: (onboarded: boolean) => void }) {
+  const demoLogin = useApp((s) => s.demoLogin)
+  const [busy, setBusy] = useState<'' | 'sms' | 'demo'>('')
   const [err, setErr] = useState('')
   const ok = /^[6-9]\d{9}$/.test(draft.phone)
 
   const send = async () => {
-    setBusy(true); setErr('')
+    setBusy('sms'); setErr('')
     try {
       const r = await api.sendCode(draft.phone, 'sms')
       Object.assign(otpState, { sessionId: r.session_id, devCode: r.dev_code })
       next()
     } catch (e: any) {
       setErr(e.message)
-    } finally { setBusy(false) }
+    } finally { setBusy('') }
+  }
+
+  // Demo: skip the SMS. The number is still the account and the caller ID Haanji knows.
+  const demo = async () => {
+    setBusy('demo'); setErr('')
+    try {
+      const r = await api.demoSignIn(draft.phone, draft.name)
+      token.set(r.token)
+      if (r.name) update({ name: r.name })
+      await onSignedIn(r.onboarded)
+    } catch (e: any) {
+      setErr(e.message)
+    } finally { setBusy('') }
   }
 
   return (
     <StepFrame
       tag="Phone number"
       title={'What’s your\nnumber?'}
-      sub="We’ll text you a 4-digit code."
-      footer={<button className="btn" disabled={!ok || busy} onClick={send}>{busy ? <Spinner /> : 'Send code'}</button>}
+      sub={demoLogin ? 'Use your real number. Haanji recognises you when you call from it.' : 'We’ll text you a 4-digit code.'}
+      footer={
+        <div className="space-y-2.5">
+          <button className="btn" disabled={!ok || !!busy} onClick={send}>{busy === 'sms' ? <Spinner /> : 'Send code'}</button>
+          {demoLogin && (
+            <button className="btn-ghost w-full py-3 text-[15px] font-semibold disabled:opacity-40" disabled={!ok || !!busy} onClick={demo}>
+              {busy === 'demo' ? <Spinner /> : 'Continue without OTP (demo)'}
+            </button>
+          )}
+        </div>
+      }
     >
       <div className="flex gap-2">
         <div className="field flex w-[84px] shrink-0 items-center justify-center gap-1.5 px-0">
