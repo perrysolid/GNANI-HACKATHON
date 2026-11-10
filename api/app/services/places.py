@@ -107,3 +107,55 @@ async def describe(lat: float, lng: float) -> dict:
         except Exception as e:
             log.info("nearby lookup failed: %s", e)
     return out
+
+
+def _plain(html: str) -> str:
+    """Directions step HTML -> plain text ("Turn right onto 24th Main Rd. Pass by ...")."""
+    import re
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.replace("<div", ". <div"))).replace(" .", ".").strip(" .")
+
+
+async def geocode(address: str, key: str) -> tuple[float, float] | None:
+    async with httpx.AsyncClient(timeout=8) as c:
+        try:
+            r = await c.get("https://maps.googleapis.com/maps/api/geocode/json",
+                            params={"address": address, "key": key, "region": "in"})
+            res = r.json().get("results") or []
+            if res:
+                loc = res[0]["geometry"]["location"]
+                return loc["lat"], loc["lng"]
+        except Exception as e:
+            log.info("geocode failed: %s", e)
+    return None
+
+
+async def route_from(query: str, dest: tuple[float, float], key: str) -> dict | None:
+    """Find the place a caller says they're at (near the destination) and the way from there.
+    {'from': 'Agara Lake', 'distance': '1.8 km', 'time': '6 mins', 'steps': ['Head north on ...', ...]}"""
+    async with httpx.AsyncClient(timeout=8) as c:
+        try:
+            r = await c.post("https://places.googleapis.com/v1/places:searchText",
+                             headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": "places.displayName,places.location"},
+                             json={"textQuery": query, "maxResultCount": 1, "languageCode": "en", "regionCode": "IN",
+                                   "locationBias": {"circle": {"center": {"latitude": dest[0], "longitude": dest[1]},
+                                                               "radius": 8000}}})
+            places = r.json().get("places") or []
+            if not places:
+                return None
+            p = places[0]
+            o = (p["location"]["latitude"], p["location"]["longitude"])
+            if distance_m(*o, *dest) > 25_000:  # matched some other city
+                return None
+            r = await c.get("https://maps.googleapis.com/maps/api/directions/json",
+                            params={"origin": f"{o[0]},{o[1]}", "destination": f"{dest[0]},{dest[1]}",
+                                    "mode": "driving", "region": "in", "language": "en", "key": key})
+            routes = r.json().get("routes") or []
+            if not routes:
+                return None
+            leg = routes[0]["legs"][0]
+            steps = [f"{_plain(s['html_instructions'])} ({s['distance']['text']})" for s in leg["steps"]]
+            return {"from": p["displayName"]["text"], "distance": leg["distance"]["text"],
+                    "time": leg["duration"]["text"], "steps": steps[:8]}
+        except Exception as e:
+            log.info("route lookup failed: %s", e)
+    return None

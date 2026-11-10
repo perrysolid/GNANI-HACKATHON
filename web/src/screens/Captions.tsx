@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowUp, Captions as CaptionsIcon, Headphones } from 'lucide-react'
+import { ArrowUp, Captions as CaptionsIcon, Headphones, MapPin } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -9,7 +9,7 @@ import { CallLink, wsUrl } from '../lib/live'
 import { useApp } from '../lib/store'
 import { Backdrop, BackButton, ErrorText } from '../components/ui'
 
-type Line = { id: number; who: 'caller' | 'haanji' | 'you'; text: string; lang?: string }
+type Line = { id: number; who: 'caller' | 'haanji' | 'you' | 'map'; text: string; lang?: string }
 const QUICK = ['Please wait a minute', 'I’m coming down', 'Leave it at the gate', 'Call me back later', 'Yes', 'No']
 
 const JOIN_KEY = 'haanji.join'
@@ -68,6 +68,7 @@ export function Captions() {
           return next
         })
         if (e.type === 'typed') add({ who: 'you', text: e.text })
+        if (e.type === 'route') add({ who: 'map', text: `Found ${e.from} on the map · ${e.distance} · ${e.time} away` })
         if (e.type === 'call_end') { setInCall(false); setEnded(e.summary || 'Call ended'); if (link.current) link.current.live = false }
       }
       s.onclose = () => { setConnected(false); if (alive) retry = window.setTimeout(open, 3000) }
@@ -167,7 +168,11 @@ export function Captions() {
           </div>
         )}
         <AnimatePresence initial={false}>
-          {lines.filter((l) => l.text).map((l) => (
+          {lines.filter((l) => l.text).map((l) => l.who === 'map' ? (
+            <motion.p key={l.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-center gap-1.5 text-[13px] font-medium text-muted">
+              <MapPin className="h-3.5 w-3.5" />{l.text}
+            </motion.p>
+          ) : (
             <motion.div key={l.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={clsx('flex', l.who === 'caller' ? 'justify-start' : 'justify-end')}>
               <div className={clsx('max-w-[88%] rounded-3xl px-4 py-3', l.who === 'caller' ? 'rounded-bl-lg border border-line bg-card' : l.who === 'you' ? 'rounded-br-lg bg-accent text-ink' : 'rounded-br-lg bg-ink text-white')}>
                 <p className={clsx('text-[11px] font-semibold uppercase tracking-wider', l.who === 'haanji' ? 'text-white/50' : 'text-ink/45')}>

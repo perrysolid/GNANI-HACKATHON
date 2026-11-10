@@ -20,7 +20,7 @@ from collections.abc import Awaitable, Callable
 from websockets.asyncio.client import connect
 
 from ..config import get_settings
-from . import knowledge, llm
+from . import knowledge, llm, places
 from .gnani import tts_lock
 from .languages import LANGUAGES, is_language
 from .scam_rules import analyse
@@ -103,6 +103,9 @@ class LiveCall:
         self.guard = persona == "screen" or bool(profile.get("scam_guard"))
         # Owner joined the call ("on the call with me"): Haanji steps back while they talk.
         self.owner_spoke_at = 0.0
+        # Caller said where they are: the route from there, found on the map (one at a time).
+        self.route_note = ""
+        self._dest: tuple[float, float] | None = None
 
     # ---- who Haanji is speaking for -------------------------------------------------
 
@@ -123,7 +126,7 @@ class LiveCall:
             line += f". {a['note']}"
         return line or "not shared"
 
-    def _system(self) -> str:
+    def _system(self, allow_lookup: bool = True) -> str:
         lang = LANGUAGES[self.caller_lang]["name"]
         common = (
             f"You are Haanji, a polite phone assistant. You are ON A LIVE PHONE CALL, so reply "
@@ -150,9 +153,51 @@ class LiveCall:
             f"as the receptionist: answer customers or patients from those answers, and for a booking "
             f"take their name, preferred time and reason, then say {self.owner} will confirm. Never give "
             f"medical advice or diagnoses. If something isn't covered, take a message and say {self.owner} will call back. "
-            f"If they ask for money or an OTP, refuse politely.\n\nFacts about {self.owner}:\n"
-            f"{knowledge.facts(self.profile)}"
+            f"If they ask for money or an OTP, refuse politely."
+            f"{self._lookup_rule(allow_lookup)}\n\nFacts about {self.owner}:\n"
+            f"{knowledge.facts(self.profile)}{self.route_note}"
         )
+
+    def _lookup_rule(self, allow: bool) -> str:
+        if not get_settings().google_maps_key or self.persona != "rider":
+            return ""
+        if not allow:
+            return " Do NOT write LOOKUP now: use the ROUTE below, or ask for a bigger landmark if it says not found."
+        return (
+            " MAP: if the caller (a rider or driver) tells you where they are right now - a shop, landmark, "
+            "signal, road or area - and needs the way, reply with ONLY one line: LOOKUP: <that place in English "
+            "letters, with the area if they said it>. Nothing else. You will then get the route from there and guide "
+            "them. Don't LOOKUP the same place twice."
+        )
+
+    async def _destination(self) -> tuple[float, float] | None:
+        """Where riders should come: current location if shared in the last 12 h, else home."""
+        from datetime import datetime, timezone
+        live = self.profile.get("live") or {}
+        if live.get("lat") and live.get("at"):
+            age = datetime.now(timezone.utc) - datetime.fromisoformat(live["at"])
+            if age.total_seconds() < 12 * 3600:
+                return live["lat"], live["lng"]
+        if self._dest is None:
+            a = self.profile.get("address") or {}
+            line = ", ".join(x for x in (a.get("area"), self.profile.get("city")) if x)
+            if line:
+                self._dest = await places.geocode(line, get_settings().google_maps_key)
+        return self._dest
+
+    async def _lookup(self, query: str) -> None:
+        dest = await self._destination()
+        r = await places.route_from(query, dest, get_settings().google_maps_key) if dest else None
+        if r:
+            self.route_note = (
+                f"\n\nROUTE from where the caller is ({r['from']}) to {self.owner}: {r['distance']}, about {r['time']} "
+                f"by road. Steps: " + "; ".join(r["steps"]) + ". Guide them ONE or TWO steps at a time in plain "
+                f"words, using roads and landmarks; ask them to call back or say when they reach the next turn."
+            )
+            await self.send_json({"type": "route", "from": r["from"], "distance": r["distance"], "time": r["time"]})
+        else:
+            self.route_note = f"\n\nROUTE: '{query}' was not found on the map. Ask for a bigger landmark or main road nearby."
+        log.info("lookup %r -> %s", query, "found" if r else "not found")
 
     # ---- audio in -------------------------------------------------------------------
 
@@ -284,14 +329,28 @@ class LiveCall:
                 else GREETING[self.caller_lang].format(name=self.speaking_for)
             )
             return
-        buf = ""
-        async for chunk in llm.stream([{"role": "system", "content": self._system()}, *self.history[-12:]], 400):
-            buf += chunk
-            done, buf = split_sentences(buf)
-            for sent in done:
-                yield sent
-        if buf.strip():
-            yield buf.strip()
+        for allow in (True, False):
+            buf, lookup, decided = "", False, False
+            async for chunk in llm.stream([{"role": "system", "content": self._system(allow)}, *self.history[-12:]], 400):
+                buf += chunk
+                if not decided:
+                    head = buf.lstrip().upper()
+                    if len(head) < 7 and "LOOKUP:".startswith(head):
+                        continue  # might be a map lookup: don't speak yet
+                    decided, lookup = True, head.startswith("LOOKUP")
+                if lookup:
+                    continue
+                done, buf = split_sentences(buf)
+                for sent in done:
+                    yield sent
+            if not lookup:
+                if buf.strip():
+                    yield buf.strip()
+                return
+            query = buf.split(":", 1)[-1].strip().splitlines()[0][:120] if ":" in buf else ""
+            if not query or not allow:
+                return
+            await self._lookup(query)
 
     async def _reply(self, turn: int, fixed: str | None, lang: str, then_end: bool) -> None:
         s = get_settings()

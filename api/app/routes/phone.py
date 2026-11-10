@@ -179,7 +179,7 @@ async def bridge(ws: WebSocket, wire: Wire, uid: int, persona: str, ctx, caller:
 
     async def on_event(e: dict):
         kind = e.get("type")
-        if kind in ("heard", "reply_start", "reply_text", "interrupted", "shield", "error"):
+        if kind in ("heard", "reply_start", "reply_text", "interrupted", "shield", "error", "route"):
             hub.publish(uid, e)
         if kind == "reply_start":
             state["turn"], state["buf"] = e["turn"], b""
