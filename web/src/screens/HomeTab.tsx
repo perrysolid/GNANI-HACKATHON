@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { langName, langNative } from '../lib/data'
 import { playBase64, stopPlayback } from '../lib/recorder'
 import { useApp } from '../lib/store'
-import { ErrorText, Orb, Wave } from '../components/ui'
+import { ErrorText, Orb, Spinner, Wave } from '../components/ui'
 import { who } from './steps/Family'
 import { summary, TYPES } from './Teach'
 
@@ -22,13 +22,20 @@ function greeting() {
 }
 
 export function HomeTab() {
-  const { me, haanjiNumber } = useApp()
+  const { me, haanjiNumber, setMe } = useApp()
+  const [claiming, setClaiming] = useState(false)
   const [audio, setAudio] = useState<'idle' | 'loading' | 'playing'>('idle')
   const [err, setErr] = useState('')
   if (!me) return null
   const p = me.profile
   const away = p.purposes?.includes('away')
   const first = me.name.split(' ')[0]
+  const number = haanjiNumber.length === 11 ? `${haanjiNumber.slice(0, 3)} ${haanjiNumber.slice(3, 7)} ${haanjiNumber.slice(7)}` : haanjiNumber
+  const claim = async () => {
+    setClaiming(true); setErr('')
+    try { setMe(await api.claimNumber()) } catch (e: any) { setErr(e.message) }
+    setClaiming(false)
+  }
 
   const hearAddress = async () => {
     if (audio === 'playing') { stopPlayback(); setAudio('idle'); return }
@@ -48,24 +55,30 @@ export function HomeTab() {
       </motion.div>
 
       <motion.section {...item(1)} className="relative mt-5 overflow-hidden rounded-[28px] bg-ink p-6 text-white">
-        <Orb className="absolute -right-6 -top-6 h-44 w-44" active={!!haanjiNumber} color={haanjiNumber ? '#C8F24A' : '#8a8a8a'} />
+        <Orb className="absolute -right-6 -top-6 h-44 w-44" active={me.owns_number} color={me.owns_number ? '#C8F24A' : '#8a8a8a'} />
         <div className="relative max-w-[62%]">
           <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold">
-            <span className={haanjiNumber ? 'h-2 w-2 rounded-full bg-leaf' : 'h-2 w-2 rounded-full bg-white/40'} />
-            {haanjiNumber ? 'Answering calls' : 'Calling not live yet'}
+            <span className={me.owns_number ? 'h-2 w-2 rounded-full bg-leaf' : 'h-2 w-2 rounded-full bg-white/40'} />
+            {!haanjiNumber ? 'Calling not live yet' : me.owns_number ? 'Answering calls' : 'Number in use'}
           </span>
           <p className="mt-4 font-display text-[24px] font-bold leading-tight">
             {p.local_language ? <>Ready for callers in {langNative(p.local_language)}</> : <>Ready when you can’t pick up</>}
           </p>
           <p className="mt-2 text-[14px] text-white/60">
-            {haanjiNumber ? `Call from +91 ${me.phone.slice(0, 5)} ${me.phone.slice(5)} and you reach your own Haanji.` : 'Your setup is saved. Try a call in the browser meanwhile.'}
+            {!haanjiNumber ? 'Your setup is saved. Try a call in the browser meanwhile.'
+              : me.owns_number ? 'Anyone who calls this number reaches your Haanji.'
+              : 'This number is answering for someone else right now.'}
           </p>
         </div>
-        {haanjiNumber && (
+        {haanjiNumber && (me.owns_number ? (
           <a href={`tel:${haanjiNumber}`} className="relative mt-5 flex h-12 items-center justify-center gap-2 rounded-2xl bg-accent text-[15px] font-semibold text-ink active:scale-[0.98] transition">
-            <Phone className="h-[18px] w-[18px]" fill="currentColor" /> Call your Haanji · {haanjiNumber.length === 11 ? `${haanjiNumber.slice(0, 3)} ${haanjiNumber.slice(3, 7)} ${haanjiNumber.slice(7)}` : haanjiNumber}
+            <Phone className="h-[18px] w-[18px]" fill="currentColor" /> Call {number}
           </a>
-        )}
+        ) : (
+          <button onClick={claim} disabled={claiming} className="relative mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white text-[15px] font-semibold text-ink active:scale-[0.98] transition disabled:opacity-60">
+            {claiming ? <Spinner /> : <>Answer {number} for me</>}
+          </button>
+        ))}
       </motion.section>
 
       <div className="mt-4 grid grid-cols-2 gap-3">

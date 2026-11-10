@@ -68,7 +68,7 @@ export type FamilyMember = {
   id: number; relation: string; name: string; phone: string; language: Lang
   screen_unknown: boolean; block_scams: boolean; translate: boolean; checkin: boolean; checkin_time: string
 }
-export type Me = { id: number; name: string; phone: string; onboarded: boolean; profile: Profile; family: FamilyMember[] }
+export type Me = { id: number; name: string; phone: string; onboarded: boolean; owns_number: boolean; profile: Profile; family: FamilyMember[] }
 export type CallRow = {
   id: number; direction: 'in' | 'out'; kind: string; counterpart: string; language: Lang
   verdict: string; summary: string; created_at: string
@@ -85,6 +85,7 @@ export const api = {
   verifyCode: (session_id: string, code: string, name: string) =>
     request<{ token: string; onboarded: boolean; name: string }>('/api/auth/verify', json('POST', { session_id, code, name })),
   me: () => request<Me>('/api/me'),
+  claimNumber: () => request<Me>('/api/me/number', json('POST')),
   updateMe: (patch: Partial<Profile> & { name?: string; onboarded?: boolean }) => request<Me>('/api/me', json('PATCH', patch)),
   addFamily: (f: Omit<FamilyMember, 'id'>) => request<FamilyMember>('/api/family', json('POST', f)),
   updateFamily: (id: number, f: Omit<FamilyMember, 'id'>) => request<FamilyMember>(`/api/family/${id}`, json('PATCH', f)),
