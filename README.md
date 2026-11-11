@@ -2,15 +2,13 @@
 
 <img src="docs/media/banner.png" alt="haanji — Every call. Every language." width="100%">
 
+https://github.com/user-attachments/assets/f7d6b419-63ec-4a98-9081-203ffb1052cb
+
+<sub>▶ **3-minute film:** real Hindi delivery and clinic calls, a Kannada directions call and a scam call cut, all on Gnani voice models. · [Download](docs/media/haanji_film.mp4)</sub>
+
 ### Your phone, answered in the caller's language.
 
 Haanji picks up when you can't. A Kannada-speaking rider gets guided to your exact gate, a patient gets the clinic's timings, and a fake "Delhi Police" caller gets cut off before reaching your mother.
-
-<br>
-
-<a href="docs/media/haanji_film.mp4"><img src="docs/media/poster.png" alt="Watch the 3-minute Haanji film" width="88%"></a>
-
-<sub>▶ **3-minute film:** real Hindi delivery and clinic calls, a Kannada directions call and a scam call cut, all on Gnani voice models.</sub>
 
 <br>
 
