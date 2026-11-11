@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..auth import issue_token
 from ..config import get_settings
 from ..db import OtpSession, User, get_db, now
+from ..services.ownership import stamp
 from ..services import twofactor
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -91,6 +92,8 @@ def _sign_in(db: Session, phone: str, name: str) -> User:
         db.add(user)
     elif name.strip() and not user.name:
         user.name = name.strip()
+    if user.onboarded:  # whoever signs in last gets the shared Haanji number
+        user.profile = {**(user.profile or {}), "number_since": stamp()}
     return user
 
 

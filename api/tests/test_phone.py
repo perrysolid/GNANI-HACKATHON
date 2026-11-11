@@ -33,13 +33,13 @@ def test_number_answers_for_latest_signup():
     from app.routes.phone import _resolve_owner
     from tests.test_api import _login
     with TestClient(app) as c:
-        ids = {}
+        ids, hs = {}, {}
         for phone in ("9811100001", "9811100002"):
-            h = {"Authorization": f"Bearer {_login(c, phone=phone)}"}
-            ids[phone] = c.patch("/api/me", headers=h, json={"onboarded": True}).json()
-        assert ids["9811100002"]["owns_number"] and not c.get(
-            "/api/me", headers={"Authorization": f"Bearer {_login(c, phone='9811100001')}"}).json()["owns_number"]
+            hs[phone] = {"Authorization": f"Bearer {_login(c, phone=phone)}"}
+            ids[phone] = c.patch("/api/me", headers=hs[phone], json={"onboarded": True}).json()
+        assert ids["9811100002"]["owns_number"] and not c.get("/api/me", headers=hs["9811100001"]).json()["owns_number"]
         assert _resolve_owner("09000000000", "") == ids["9811100002"]["id"]   # newest sign-up answers
-        h1 = {"Authorization": f"Bearer {_login(c, phone='9811100001')}"}
-        assert c.post("/api/me/number", headers=h1).json()["owns_number"]     # claim it back
-        assert _resolve_owner("09811100002", "") == ids["9811100001"]["id"]
+        assert c.post("/api/me/number", headers=hs["9811100001"]).json()["owns_number"]  # claim it back
+        assert _resolve_owner("09000000000", "") == ids["9811100001"]["id"]
+        _login(c, phone="9811100002")  # signing in again takes it over
+        assert _resolve_owner("09811100001", "") == ids["9811100002"]["id"]

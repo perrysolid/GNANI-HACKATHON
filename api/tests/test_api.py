@@ -117,3 +117,18 @@ def test_scam_guard_is_on_only_for_family_setups():
             me = c.patch("/api/me", headers=h, json={"purposes": purposes, "onboarded": True}).json()
             assert me["profile"]["scam_guard"] is want
             assert c.patch("/api/me", headers=h, json={"scam_guard": not want}).json()["profile"]["scam_guard"] is (not want)
+
+
+def test_shared_number_answers_for_whoever_signed_up_or_in_last():
+    with TestClient(app) as c:
+        def onboard(phone, name):
+            h = {"Authorization": f"Bearer {c.post('/api/auth/demo', json={'phone': phone, 'name': name}).json()['token']}"}
+            c.patch("/api/me", headers=h, json={"onboarded": True})
+            return h
+        parth, judge = onboard("9876500031", "Parth"), onboard("9876500032", "Judge")
+        assert c.get("/api/me", headers=judge).json()["owns_number"] is True
+        assert c.get("/api/me", headers=parth).json()["owns_number"] is False
+        c.post("/api/auth/demo", json={"phone": "9876500031"})  # Parth signs in again
+        assert c.get("/api/me", headers=parth).json()["owns_number"] is True
+        c.post("/api/auth/demo", json={"phone": "9876500032"})  # the judge comes back
+        assert c.get("/api/me", headers=judge).json()["owns_number"] is True
