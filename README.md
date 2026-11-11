@@ -8,6 +8,12 @@ Haanji picks up when you can't. A Kannada-speaking rider gets guided to your exa
 
 <br>
 
+<a href="docs/media/haanji_film.mp4"><img src="docs/media/poster.png" alt="Watch the 3-minute Haanji film" width="88%"></a>
+
+<sub>▶ **3-minute film:** real Hindi delivery and clinic calls, a Kannada directions call and a scam call cut, all on Gnani voice models.</sub>
+
+<br>
+
 [![Live app](https://img.shields.io/badge/Live_app-haanji--help.vercel.app-C8F24A?style=for-the-badge&labelColor=111111)](https://haanji-help.vercel.app)
 [![Call Haanji](https://img.shields.io/badge/Call-080_4729_0685-111111?style=for-the-badge&labelColor=C8F24A&logoColor=111111)](tel:+918047290685)
 [![Built on Gnani](https://img.shields.io/badge/Built_on-Gnani.ai-111111?style=for-the-badge&labelColor=F7F5F0)](https://gnani.ai)
