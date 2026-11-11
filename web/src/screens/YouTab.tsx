@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { langName, langNative } from '../lib/data'
 import { useApp } from '../lib/store'
 import { PageHeader } from './Shell'
-import { ForwardCard } from './steps/Activate'
+import { DemoNumberCard } from './steps/Activate'
 
 export function YouTab() {
   const nav = useNavigate()
@@ -44,7 +44,7 @@ export function YouTab() {
 
         {haanjiNumber && (
           <div className="mt-3">
-            <ForwardCard number={haanjiNumber} title="Call forwarding" sub="Dial once on your phone." />
+            <DemoNumberCard number={haanjiNumber} title="Try your Haanji" sub="Gnani is set up for you." />
           </div>
         )}
 
